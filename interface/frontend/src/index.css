@@ -1,0 +1,168 @@
+@import "tailwindcss";
+
+/* ============ Tokens ============
+   Raw values live on :root so they can flip for dark mode; @theme inline
+   exposes them as Tailwind utilities (bg-paper, text-ink, border-rule, …). */
+@theme inline {
+  --color-desk: var(--desk);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-graphite: var(--graphite);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+  --color-hover-desk: var(--hover-desk);
+  --color-hover-paper: var(--hover-paper);
+  --color-row-active: var(--row-active);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+  --color-focus: var(--focus);
+  --color-scrim: var(--scrim);
+
+  /* Highlighter inks: one per vocabulary group */
+  --color-hl-yellow: var(--hl-yellow);
+  --color-hl-mint: var(--hl-mint);
+  --color-hl-pink: var(--hl-pink);
+  --color-hl-lavender: var(--hl-lavender);
+
+  --shadow-pop: var(--shadow);
+}
+
+@theme {
+  --font-sans: "Schibsted Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-serif: "Literata", Georgia, "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
+
+  --radius-field: 10px;
+  --radius-row: 8px;
+  --radius-stroke: 7px 4px 8px 5px; /* marker-stroke corners shared by chips and highlights */
+
+  --animate-pop: pop 0.16s ease-out;
+  --animate-skeleton: skeleton 1.2s ease-in-out infinite;
+
+  @keyframes pop {
+    from { opacity: 0; transform: translateY(-4px); }
+  }
+  @keyframes skeleton {
+    50% { opacity: 0.45; }
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --desk: #F1F2EF;
+    --paper: #FFFFFF;
+    --ink: #1C1E21;
+    --ink-2: #43474E;
+    --graphite: #62676F;
+    --rule: #D6D9DC;
+    --rule-strong: #A3A8AF;
+    --hover-desk: rgba(28, 30, 33, 0.06);
+    --hover-paper: #F3F4F2;
+    --row-active: #ECEEE9;
+    --primary: #1C1E21;
+    --primary-hover: #3A3D42;
+    --on-primary: #FFFFFF;
+    --focus: #2F5BD3;
+    --scrim: rgba(20, 22, 25, 0.36);
+    --shadow: 0 14px 34px -14px rgba(20, 22, 25, 0.30), 0 2px 6px -2px rgba(20, 22, 25, 0.10);
+    --hl-yellow: #F0F35A;
+    --hl-mint: #A8ECCA;
+    --hl-pink: #FFBDD7;
+    --hl-lavender: #D4CDFF;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --desk: #131517;
+      --paper: #1C1F23;
+      --ink: #E9EAEC;
+      --ink-2: #C4C8CE;
+      --graphite: #9DA2AA;
+      --rule: #32363C;
+      --rule-strong: #5C6169;
+      --hover-desk: rgba(255, 255, 255, 0.06);
+      --hover-paper: #25292E;
+      --row-active: #2B2F35;
+      --primary: #E9EAEC;
+      --primary-hover: #FFFFFF;
+      --on-primary: #131517;
+      --focus: #8FACFF;
+      --scrim: rgba(0, 0, 0, 0.55);
+      --shadow: 0 16px 36px -12px rgba(0, 0, 0, 0.65), 0 2px 6px -2px rgba(0, 0, 0, 0.45);
+      --hl-yellow: rgba(236, 240, 80, 0.32);
+      --hl-mint: rgba(110, 224, 168, 0.30);
+      --hl-pink: rgba(255, 140, 185, 0.30);
+      --hl-lavender: rgba(170, 155, 255, 0.34);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --desk: #131517;
+    --paper: #1C1F23;
+    --ink: #E9EAEC;
+    --ink-2: #C4C8CE;
+    --graphite: #9DA2AA;
+    --rule: #32363C;
+    --rule-strong: #5C6169;
+    --hover-desk: rgba(255, 255, 255, 0.06);
+    --hover-paper: #25292E;
+    --row-active: #2B2F35;
+    --primary: #E9EAEC;
+    --primary-hover: #FFFFFF;
+    --on-primary: #131517;
+    --focus: #8FACFF;
+    --scrim: rgba(0, 0, 0, 0.55);
+    --shadow: 0 16px 36px -12px rgba(0, 0, 0, 0.65), 0 2px 6px -2px rgba(0, 0, 0, 0.45);
+    --hl-yellow: rgba(236, 240, 80, 0.32);
+    --hl-mint: rgba(110, 224, 168, 0.30);
+    --hl-pink: rgba(255, 140, 185, 0.30);
+    --hl-lavender: rgba(170, 155, 255, 0.34);
+  }
+
+  /* `data-color` picks the highlighter ink for a vocabulary group; utilities read it as var(--c). */
+  [data-color="yellow"] { --c: var(--hl-yellow); }
+  [data-color="mint"] { --c: var(--hl-mint); }
+  [data-color="pink"] { --c: var(--hl-pink); }
+  [data-color="lavender"] { --c: var(--hl-lavender); }
+
+  body {
+    min-height: 100vh;
+    background: var(--desk);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button:not(:disabled) { cursor: pointer; }
+
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+}
+
+@layer components {
+  /* The highlighter stroke. Spans mount without `.on`, then gain it a couple of
+     frames later so the background sweeps in from the left. */
+  .hl {
+    margin: 0 -0.2em;
+    padding: 0.06em 0.2em;
+    border-radius: 0.34em 0.16em 0.4em 0.22em;
+    background-image: linear-gradient(var(--c), var(--c));
+    background-repeat: no-repeat;
+    background-position: left center;
+    background-size: 0% 100%;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+    transition: background-size 0.42s cubic-bezier(0.3, 0.7, 0.2, 1), color 0.3s ease;
+  }
+  .hl.on { background-size: 100% 100%; color: var(--ink); }
+  .sweeping .hl { transition-delay: calc(var(--d, 0ms) + var(--hd, 0ms)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
