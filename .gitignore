@@ -1,0 +1,32 @@
+# ── Data ────────────────────────────────────────────────────────────────────
+# Everything under data/raw is re-downloaded by scripts/setup.sh, and everything
+# under data/processed is rebuilt by the scripts in src/ and scripts/.
+data/raw/
+data/processed/
+# data/samples/ (small fixtures used for local testing) is tracked.
+
+# ── Model artifacts and run outputs ─────────────────────────────────────────
+checkpoints/
+runs/
+*.faiss
+*.pt
+*.db
+
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# ── Environments ────────────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+.env
+
+# ── Editors and OS ──────────────────────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp
