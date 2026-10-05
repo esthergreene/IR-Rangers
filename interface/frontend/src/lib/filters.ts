@@ -1,7 +1,9 @@
 import type { SearchResult } from '../api'
 
+// CJ Notes: Default filter options to be selected
 export const DOCUMENT_TYPES = ['Report', 'Guide', 'Article', 'Study', 'Case study']
 
+// CJ Notes: Publication year filter options to be selected, ideally this should be based off of real data from documents
 export const SINCE_OPTIONS = [
   { value: 0, label: 'Any time' },
   { value: 2025, label: '2025 or later' },
