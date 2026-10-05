@@ -1,0 +1,14 @@
+cleaning:
+  remove_math: true       # inline $...$ spans and leftover \commands
+  remove_urls: true
+  remove_citations: true  # [1], [5, 6, 7], [12-15]
+tokenizer:
+  lowercase: true
+  min_token_length: 2     # drops single letters/digits and "_"
+  drop_numeric: true      # drops tokens that are only digits
+  stopwords:
+    source: nltk
+    custom_file: config/stopwords.txt
+    extra: ['et', 'al', 'fig', 'figure', 'table', 'eq', 'section']
+    keep: []
+  stemming: none          # none | porter | snowball
