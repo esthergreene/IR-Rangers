@@ -36,6 +36,10 @@ def calculate_document_frequency(index):
 
     return document_frequency
 
+def save_json(data, file_path):
+    with open(file_path, "w", encoding="utf-8") as file:
+        json.dump(data, file)
+
 def build_paper_index(json_files):
     paper_index = {}
     document_lengths = {}
@@ -104,6 +108,7 @@ if __name__ == "__main__":
     paper_index, document_lengths = build_paper_index(json_files[:5])
     average_document_length = sum(document_lengths.values()) / len(document_lengths)
     document_frequency = calculate_document_frequency(paper_index)
+    save_json(paper_index, "test_paper_index.json")
 
     print("Papers indexed: ", 5)
     print("Unique terms in index: ", len(paper_index))
