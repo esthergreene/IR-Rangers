@@ -28,6 +28,14 @@ def get_paper_text(paper):
     
     return paper_text
 
+def calculate_document_frequency(index):
+    document_frequency = {}
+
+    for term, documents in index.items():
+        document_frequency[term] = len(documents)
+
+    return document_frequency
+
 def build_paper_index(json_files):
     paper_index = {}
     document_lengths = {}
@@ -71,7 +79,7 @@ def build_paragraph_index(json_files):
 
 if __name__ == "__main__":
     files = os.listdir(DATA_FOLDER)
-    json_files = [file for file in files if file.endswith(".json")]
+    json_files = sorted([file for file in files if file.endswith(".json")])
 
     print("Number of JSON files: ", len(json_files))
 
@@ -94,10 +102,8 @@ if __name__ == "__main__":
     print("10 most common terms: ", term_frequencies.most_common(10))
 
     paper_index, document_lengths = build_paper_index(json_files[:5])
-    document_frequency = {}
-
-    for term, documents in paper_index.items():
-        document_frequency[term] = len(documents)
+    average_document_length = sum(document_lengths.values()) / len(document_lengths)
+    document_frequency = calculate_document_frequency(paper_index)
 
     print("Papers indexed: ", 5)
     print("Unique terms in index: ", len(paper_index))
@@ -106,6 +112,7 @@ if __name__ == "__main__":
     print("Document lengths:", document_lengths)
     print("Document frequency for model:", document_frequency.get("model"))
     print("Document frequency for diffusion:", document_frequency.get("diffusion"))
+    print("Average document length:", average_document_length)
     print("\nFirst 3 paragraphs: ")
 
     for paragraph_id, paragraph_text in list(paper["paragraphs"].items())[:3]:
@@ -113,12 +120,11 @@ if __name__ == "__main__":
         print("Processed length: ", len(preprocess(paragraph_text)))
 
     paragraph_index, paragraph_lengths = build_paragraph_index(json_files[:5])
-    paragraph_frequency = {}
-
-    for term, paragraphs in paragraph_index.items():
-        paragraph_frequency[term] = len(paragraphs)
+    average_paragraph_length = sum(paragraph_lengths.values()) / len(paragraph_lengths)
+    paragraph_frequency = calculate_document_frequency(paragraph_index)
 
     print("Paragraphs indexed:", len(paragraph_lengths))
     print("Unique terms in paragraph index:", len(paragraph_index))
     print("Paragraph index entry for model:", paragraph_index.get("model"))
     print("Paragraph frequency for model:", paragraph_frequency.get("model"))
+    print("Average paragraph length:", average_paragraph_length)
