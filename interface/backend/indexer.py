@@ -20,6 +20,55 @@ def load_paper(file_path):
 
     return paper
 
+def get_paper_text(paper):
+    paper_text = paper["title"] + " " + paper["abstract"]
+
+    for paragraph in paper["paragraphs"].values():
+        paper_text += " " + paragraph
+    
+    return paper_text
+
+def build_paper_index(json_files):
+    paper_index = {}
+    document_lengths = {}
+
+    for filename in json_files:
+        file_path = os.path.join(DATA_FOLDER, filename)
+        paper = load_paper(file_path)
+        paper_text = get_paper_text(paper)
+        paper_tokens = preprocess(paper_text)
+        term_frequencies = Counter(paper_tokens)
+        document_lengths[paper["paper_id"]] = len(paper_tokens)
+
+        for term, frequency in term_frequencies.items():
+            if term not in paper_index:
+                paper_index[term] = {}
+
+            paper_index[term][paper["paper_id"]] = frequency
+        
+    return paper_index, document_lengths
+
+def build_paragraph_index(json_files):
+    paragraph_index = {}
+    paragraph_lengths = {}
+
+    for filename in json_files:
+        file_path = os.path.join(DATA_FOLDER, filename)
+        paper = load_paper(file_path)
+
+        for paragraph_id, paragraph_text in paper["paragraphs"].items():
+            paragraph_tokens = preprocess(paragraph_text)
+            term_frequencies = Counter(paragraph_tokens)
+            paragraph_lengths[paragraph_id] = len(paragraph_tokens)
+
+            for term, frequency in term_frequencies.items():
+                if term not in paragraph_index:
+                    paragraph_index[term] = {}
+
+                paragraph_index[term][paragraph_id] = frequency
+
+    return paragraph_index, paragraph_lengths
+
 if __name__ == "__main__":
     files = os.listdir(DATA_FOLDER)
     json_files = [file for file in files if file.endswith(".json")]
@@ -36,11 +85,7 @@ if __name__ == "__main__":
     print("Number of paragraphs: ", len(paper["paragraphs"]))
     print("Processed title:", preprocess(paper["title"]))
 
-    paper_text = paper["title"] + " " + paper["abstract"]
-
-    for paragraph in paper["paragraphs"].values():
-        paper_text += " " + paragraph
-
+    paper_text = get_paper_text(paper)
     paper_tokens = preprocess(paper_text)
     term_frequencies = Counter(paper_tokens)
 
@@ -48,27 +93,8 @@ if __name__ == "__main__":
     print("Unique terms: ", len(term_frequencies))
     print("10 most common terms: ", term_frequencies.most_common(10))
 
-    paper_index = {}
-    document_lengths = {}
+    paper_index, document_lengths = build_paper_index(json_files[:5])
     document_frequency = {}
-
-    for filename in json_files[:5]:
-        file_path = os.path.join(DATA_FOLDER, filename)
-        paper = load_paper(file_path)
-        paper_text = paper["title"] + " " + paper["abstract"]
-
-        for paragraph in paper["paragraphs"].values():
-            paper_text += " " + paragraph
-
-        paper_tokens = preprocess(paper_text)
-        term_frequencies = Counter(paper_tokens)
-        document_lengths[paper["paper_id"]] = len(paper_tokens)
-
-        for term, frequency in term_frequencies.items():
-            if term not in paper_index:
-                paper_index[term] = {}
-
-            paper_index[term][paper["paper_id"]] = frequency
 
     for term, documents in paper_index.items():
         document_frequency[term] = len(documents)
@@ -80,3 +106,19 @@ if __name__ == "__main__":
     print("Document lengths:", document_lengths)
     print("Document frequency for model:", document_frequency.get("model"))
     print("Document frequency for diffusion:", document_frequency.get("diffusion"))
+    print("\nFirst 3 paragraphs: ")
+
+    for paragraph_id, paragraph_text in list(paper["paragraphs"].items())[:3]:
+        print("Paragraph ID: ", paragraph_id)
+        print("Processed length: ", len(preprocess(paragraph_text)))
+
+    paragraph_index, paragraph_lengths = build_paragraph_index(json_files[:5])
+    paragraph_frequency = {}
+
+    for term, paragraphs in paragraph_index.items():
+        paragraph_frequency[term] = len(paragraphs)
+
+    print("Paragraphs indexed:", len(paragraph_lengths))
+    print("Unique terms in paragraph index:", len(paragraph_index))
+    print("Paragraph index entry for model:", paragraph_index.get("model"))
+    print("Paragraph frequency for model:", paragraph_frequency.get("model"))
