@@ -1,18 +1,12 @@
 import json
 import os
-import re
-from nltk.corpus import stopwords
 from collections import Counter
+from src.preprocessing.tokenizer import tokenize_text
 
 DATA_FOLDER = os.path.expanduser("~/datasets/IR26/JSON Files")
-STOPWORDS = set(stopwords.words("english"))
 
 def preprocess(text):
-    text = text.lower()
-    tokens = re.findall(r'\b[a-z]+\b', text)
-    tokens = [token for token in tokens if token not in STOPWORDS]
-
-    return tokens
+    return tokenize_text(text)
 
 def load_paper(file_path):
     with open(file_path, "r", encoding="utf-8") as file:
