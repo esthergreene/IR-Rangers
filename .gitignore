@@ -3,7 +3,7 @@
 # under data/processed is rebuilt by the scripts in src/ and scripts/.
 data/raw/
 data/processed/
-# data/samples/ (small fixtures used for local testing) is tracked.
+data/processed_sample/
 
 # ── Model artifacts and run outputs ─────────────────────────────────────────
 checkpoints/
@@ -32,3 +32,10 @@ env/
 *.swp
 # Generated search indexes
 *_index.json
+
+# ── Paper ──────────────────────────────────────────────────────────
+paper/paper.aux
+paper/paper.fdb_latexmk
+paper/paper.fls
+paper/paper.log
+paper/paper.synctex.gz
