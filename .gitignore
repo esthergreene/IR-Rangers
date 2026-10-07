@@ -3,7 +3,7 @@
 # under data/processed is rebuilt by the scripts in src/ and scripts/.
 data/raw/
 data/processed/
-# data/samples/ (small fixtures used for local testing) is tracked.
+data/processed_sample/
 
 # ── Model artifacts and run outputs ─────────────────────────────────────────
 checkpoints/
