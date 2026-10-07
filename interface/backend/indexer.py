@@ -28,21 +28,73 @@ def get_paper_text(paper):
     
     return paper_text
 
-def calculate_document_frequency(index):
-    document_frequency = {}
-
-    for term, documents in index.items():
-        document_frequency[term] = len(documents)
-
-    return document_frequency
-
 def save_json(data, file_path):
     with open(file_path, "w", encoding="utf-8") as file:
         json.dump(data, file)
 
+class CorpusIndex:
+    def __init__(self):
+        self.num_docs = 0
+        self.avg_doc_length = 0.0
+        self.doc_lengths = []
+
+        self._postings = {}
+        self._doc_ids = []
+        self._doc_numbers = {}
+
+    def vocabulary(self):
+        return self._postings.keys()
+
+    def df(self, term):
+        if term not in self._postings:
+            return 0
+
+        return len(self._postings[term][0])
+
+    def postings(self, term):
+        if term not in self._postings:
+            return [], []
+
+        return self._postings[term]
+
+    def doc_id(self, doc_number):
+        return self._doc_ids[doc_number]
+
+    def doc_number(self, doc_id):
+        return self._doc_numbers[doc_id]
+
+    def to_dict(self):
+        return {
+            "num_docs": self.num_docs,
+            "avg_doc_length": self.avg_doc_length,
+            "doc_lengths": self.doc_lengths,
+            "postings": self._postings,
+            "doc_ids": self._doc_ids
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        index = cls()
+        index.num_docs = data["num_docs"]
+        index.avg_doc_length = data["avg_doc_length"]
+        index.doc_lengths = data["doc_lengths"]
+        index._postings = data["postings"]
+        index._doc_ids = data["doc_ids"]
+        index._doc_numbers = {
+            doc_id: doc_number
+            for doc_number, doc_id in enumerate(index._doc_ids)
+        }
+
+        return index
+
+def load_index(file_path):
+    with open(file_path, "r", encoding="utf-8") as file:
+        data = json.load(file)
+
+    return CorpusIndex.from_dict(data)
+        
 def build_paper_index(json_files):
-    paper_index = {}
-    document_lengths = {}
+    paper_index = CorpusIndex()
 
     for filename in json_files:
         file_path = os.path.join(DATA_FOLDER, filename)
@@ -50,19 +102,27 @@ def build_paper_index(json_files):
         paper_text = get_paper_text(paper)
         paper_tokens = preprocess(paper_text)
         term_frequencies = Counter(paper_tokens)
-        document_lengths[paper["paper_id"]] = len(paper_tokens)
+        doc_number = paper_index.num_docs
+        paper_index._doc_ids.append(paper["paper_id"])
+        paper_index._doc_numbers[paper["paper_id"]] = doc_number
+        paper_index.doc_lengths.append(len(paper_tokens))
 
         for term, frequency in term_frequencies.items():
-            if term not in paper_index:
-                paper_index[term] = {}
+            if term not in paper_index._postings:
+                paper_index._postings[term] = ([], [])
 
-            paper_index[term][paper["paper_id"]] = frequency
+            paper_index._postings[term][0].append(doc_number)
+            paper_index._postings[term][1].append(frequency)
+
+        paper_index.num_docs += 1
         
-    return paper_index, document_lengths
+    if paper_index.num_docs > 0:
+        paper_index.avg_doc_length = sum(paper_index.doc_lengths) / paper_index.num_docs
+
+    return paper_index
 
 def build_paragraph_index(json_files):
-    paragraph_index = {}
-    paragraph_lengths = {}
+    paragraph_index = CorpusIndex()
 
     for filename in json_files:
         file_path = os.path.join(DATA_FOLDER, filename)
@@ -71,15 +131,24 @@ def build_paragraph_index(json_files):
         for paragraph_id, paragraph_text in paper["paragraphs"].items():
             paragraph_tokens = preprocess(paragraph_text)
             term_frequencies = Counter(paragraph_tokens)
-            paragraph_lengths[paragraph_id] = len(paragraph_tokens)
+            doc_number = paragraph_index.num_docs
+            paragraph_index._doc_ids.append(paragraph_id)
+            paragraph_index._doc_numbers[paragraph_id] = doc_number
+            paragraph_index.doc_lengths.append(len(paragraph_tokens))
 
             for term, frequency in term_frequencies.items():
-                if term not in paragraph_index:
-                    paragraph_index[term] = {}
+                if term not in paragraph_index._postings:
+                    paragraph_index._postings[term] = ([], [])
 
-                paragraph_index[term][paragraph_id] = frequency
+                paragraph_index._postings[term][0].append(doc_number)
+                paragraph_index._postings[term][1].append(frequency)
 
-    return paragraph_index, paragraph_lengths
+            paragraph_index.num_docs += 1
+
+    if paragraph_index.num_docs > 0:
+        paragraph_index.avg_doc_length = sum(paragraph_index.doc_lengths) / paragraph_index.num_docs
+
+    return paragraph_index
 
 if __name__ == "__main__":
     files = os.listdir(DATA_FOLDER)
@@ -105,31 +174,44 @@ if __name__ == "__main__":
     print("Unique terms: ", len(term_frequencies))
     print("10 most common terms: ", term_frequencies.most_common(10))
 
-    paper_index, document_lengths = build_paper_index(json_files[:5])
-    average_document_length = sum(document_lengths.values()) / len(document_lengths)
-    document_frequency = calculate_document_frequency(paper_index)
-    save_json(paper_index, "test_paper_index.json")
+    paper_index = build_paper_index(json_files[:5])
 
-    print("Papers indexed: ", 5)
-    print("Unique terms in index: ", len(paper_index))
-    print("Index entry for diffusion: ", paper_index.get("diffusion"))
-    print("Index entry for model:", paper_index.get("model"))
-    print("Document lengths:", document_lengths)
-    print("Document frequency for model:", document_frequency.get("model"))
-    print("Document frequency for diffusion:", document_frequency.get("diffusion"))
-    print("Average document length:", average_document_length)
+    print("Papers indexed: ", paper_index.num_docs)
+    print("Unique terms in index: ", len(paper_index.vocabulary()))
+    print("Index entry for diffusion: ", paper_index.postings("diffusion"))
+    print("Index entry for model:", paper_index.postings("model"))
+    print("Document lengths:", paper_index.doc_lengths)
+    print("Document frequency for model:", paper_index.df("model"))
+    print("Document frequency for diffusion:", paper_index.df("diffusion"))
+    print("Average document length:", paper_index.avg_doc_length)
+    print("Document ID for number 0:", paper_index.doc_id(0))
+    print("Document number for ID 2408.00001:", paper_index.doc_number("2408.00001"))
     print("\nFirst 3 paragraphs: ")
 
     for paragraph_id, paragraph_text in list(paper["paragraphs"].items())[:3]:
         print("Paragraph ID: ", paragraph_id)
         print("Processed length: ", len(preprocess(paragraph_text)))
 
-    paragraph_index, paragraph_lengths = build_paragraph_index(json_files[:5])
-    average_paragraph_length = sum(paragraph_lengths.values()) / len(paragraph_lengths)
-    paragraph_frequency = calculate_document_frequency(paragraph_index)
+    paragraph_index = build_paragraph_index(json_files[:5])
+    save_json(paper_index.to_dict(), "test_paper_index.json")
+    save_json(paragraph_index.to_dict(), "test_paragraph_index.json")
 
-    print("Paragraphs indexed:", len(paragraph_lengths))
-    print("Unique terms in paragraph index:", len(paragraph_index))
-    print("Paragraph index entry for model:", paragraph_index.get("model"))
-    print("Paragraph frequency for model:", paragraph_frequency.get("model"))
-    print("Average paragraph length:", average_paragraph_length)
+    print("Paragraphs indexed:", paragraph_index.num_docs)
+    print("Unique terms in paragraph index:", len(paragraph_index.vocabulary()))
+    print("Paragraph frequency for model:", paragraph_index.df("model"))
+    print("Average paragraph length:", paragraph_index.avg_doc_length)
+
+    loaded_paper_index = load_index("test_paper_index.json")
+
+    print("\nLoaded index test:")
+    print("Loaded papers:", loaded_paper_index.num_docs)
+    print("Loaded model postings:", loaded_paper_index.postings("model"))
+    print("Loaded document ID for number 0:", loaded_paper_index.doc_id(0))
+    print("Loaded document number for ID 2408.00001:", loaded_paper_index.doc_number("2408.00001"))
+
+    loaded_paragraph_index = load_index("test_paragraph_index.json")
+
+    print("\nLoaded paragraph index test:")
+    print("Loaded paragraphs:", loaded_paragraph_index.num_docs)
+    print("Loaded model frequency:", loaded_paragraph_index.df("model"))
+    print("Loaded document ID for number 0:", loaded_paragraph_index.doc_id(0))
