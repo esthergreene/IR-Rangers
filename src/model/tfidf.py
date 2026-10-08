@@ -32,7 +32,7 @@ class TFIDFModel:
         self.idf = {}
         self.doc_norms = [0.0] * self.N
 
-        if self.index and self.N > 0:
+        if self.N > 0:
             self._precompute_weights_and_norms()
 
     def _precompute_weights_and_norms(self):
@@ -40,8 +40,6 @@ class TFIDFModel:
         print("Precomputing IDFs and Document Norms...")
         for term in self.index.vocabulary():
             df = self.index.df(term)
-            if df == 0:
-                continue
 
             # Standard log10 IDF calculation
             term_idf = math.log10(self.N / df)
@@ -49,20 +47,17 @@ class TFIDFModel:
 
             # Accumulate squared weights for document length normalization
             for doc_number, tf in zip(*self.index.postings(term)):
-                weight = (1 + math.log10(tf)) * term_idf
-                self.doc_norms[doc_number] += weight * weight
+                term_weight = self._weight(tf, term_idf)
+                self.doc_norms[doc_number] += term_weight * term_weight
 
         # Apply final square root to finalize Euclidean norms
         for doc_number, norm_sq in enumerate(self.doc_norms):
             self.doc_norms[doc_number] = math.sqrt(norm_sq)
 
-    def calculate_tf_idf(self, count, df_val):
-        """Return the TF-IDF weight for a term frequency and document frequency."""
-        if count <= 0 or df_val <= 0 or self.N == 0:
-            return 0.0
-        tf = 1 + math.log10(count)
-        idf = math.log10(self.N / df_val)
-        return tf * idf
+    @staticmethod
+    def _weight(tf, idf):
+        """Return the TF-IDF weight for a term frequency and IDF."""
+        return (1 + math.log10(tf)) * idf
 
     def search(self, query_tokens, k=100):
         """Return the ``k`` highest-scoring documents for a tokenized query.
@@ -79,7 +74,7 @@ class TFIDFModel:
         Returns:
             Up to ``k`` ``(doc_id, score)`` pairs in descending score order.
         """
-        if not query_tokens or not self.index:
+        if not query_tokens or self.N == 0:
             return []
 
         query_counts = Counter(query_tokens)
@@ -89,8 +84,7 @@ class TFIDFModel:
         # 1. Calculate query weights and total query vector norm
         for term, count in query_counts.items():
             if term in self.idf and self.idf[term] > 0:
-                tf_q = 1 + math.log10(count)
-                weight_q = tf_q * self.idf[term]
+                weight_q = self._weight(count, self.idf[term])
                 query_weights[term] = weight_q
                 query_norm_sq += weight_q * weight_q
         if not query_weights or query_norm_sq == 0:
@@ -101,7 +95,7 @@ class TFIDFModel:
 
         for term, q_weight in query_weights.items():
             for doc_number, doc_tf in zip(*self.index.postings(term)):
-                doc_weight = (1 + math.log10(doc_tf)) * self.idf[term]
+                doc_weight = self._weight(doc_tf, self.idf[term])
                 doc_scores[doc_number] += q_weight * doc_weight
 
         # Keep only the best k candidates instead of sorting every match.
