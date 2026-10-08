@@ -131,6 +131,13 @@ export function useVocabulary() {
     return new Set([...active].filter((key) => !prev.active.has(key)))
   }
 
+  function clear(): Set<string> {
+    const prev = latest.current
+    const active = new Set<string>()
+    commit({ ...prev, active, keywords: []})
+    return new Set([...prev.active].filter((key) => !active.has(key)))
+  }
+
   return {
     groups: state.groups,
     active: state.active,
@@ -142,5 +149,6 @@ export function useVocabulary() {
     addKeyword,
     removeKeyword,
     reset,
+    clear,
   }
 }

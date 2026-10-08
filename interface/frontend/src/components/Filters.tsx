@@ -180,10 +180,14 @@ function FilterForm({
 
       <div className="flex items-center justify-between gap-3 border-t border-rule pt-3">
         {/* CJ Notes: Flawed logic, when clear filters is clicked it should reset all filters to unchecked and not set them all to checked */}
-        {/* CJ Notes: Consider adding select all filter button */}
-        <TextButton onClick={() => setStaged(DEFAULT_FILTERS)}>
-          Clear filters
-        </TextButton>
+        <div>
+          <TextButton onClick={() => setStaged(DEFAULT_FILTERS)}>
+            Clear filters
+          </TextButton>
+          <TextButton onClick={() => setStaged(DEFAULT_FILTERS)}>
+            Select all filters
+          </TextButton>
+        </div>
         <Button variant="primary" onClick={() => onApply(staged)}>
           Show {plural(matching, "result")}
         </Button>
