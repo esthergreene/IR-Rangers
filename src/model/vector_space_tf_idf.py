@@ -3,6 +3,8 @@ import math
 import os
 from collections import Counter, defaultdict
 
+from src.preprocessing.tokenizer import tokenize_text
+
 # Stopwords set, written with help from Gemini 3.5 Flash
 def load_stopwords(filepath="./config/stopwords.txt"):
     if not os.path.exists(filepath):
@@ -12,11 +14,11 @@ def load_stopwords(filepath="./config/stopwords.txt"):
 
 
 class VectorSpaceTFIDF:
-    def __init__(self, inverted_index = none, N=0):
+    def __init__(self, inverted_index = None, N=0):
         self.index = inverted_index or {}
         self.N = 0
         self.idf = {}
-        self.doc_norms = deafaultdict(float)
+        self.doc_norms = defaultdict(float)
 
         if self.index and self.N > 0:
             self._precompute_idf_and_norms()
@@ -91,8 +93,8 @@ class VectorSpaceTFIDF:
 
         for doc in data:
             doc_id = doc["Id"]
-            # For results represenation
-            tokens = tokenize_vsm(doc["Text"])
+            # For results representation
+            tokens = tokenize_text(doc["Text"])
             ##
             # Complete this part to update doc_term_frequencies and unique words
             ##
@@ -200,10 +202,7 @@ class VectorSpaceTFIDF:
         # 4. Sort descending by score
         results.sort(key=lambda x: x[1], reverse=True)
         return results[:top_k]
-
-    if __name__ == "__main__":
         
-
-    # Should want to save intergers, save term frequency values, and use that to calucate the scores, 
-    # instead of saving the tf-idf values. 
-    # This will allow you to change the scoring function without having to re-index the data.
+# Should want to save intergers, save term frequency values, and use that to calucate the scores, 
+# instead of saving the tf-idf values. 
+# # This will allow you to change the scoring function without having to re-index the data.
