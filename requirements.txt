@@ -1,3 +1,9 @@
 bs4
 nltk
 pyyaml
+argparse
+json
+math
+os
+time
+collections
