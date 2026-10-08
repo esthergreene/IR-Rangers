@@ -39,3 +39,6 @@ paper/paper.fdb_latexmk
 paper/paper.fls
 paper/paper.log
 paper/paper.synctex.gz
+paper/paper.bbl
+paper/paper.blg
+paper/paper.out
