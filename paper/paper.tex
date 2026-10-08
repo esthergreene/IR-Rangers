@@ -2,31 +2,31 @@
 
 \begin{document}
 
-\title{IR Rangers: <project title>}
+\title{COS 487 / 587 Course Project Part 1: IR Rangers}
 
-\author{First Author}
+\author{Esther Greene}
 \affiliation{%
   \institution{University of Southern Maine}
   \city{Portland}
   \state{Maine}
   \country{USA}}
-\email{first.author@maine.edu}
+\email{esther.greene@maine.edu}
 
-\author{Second Author}
+\author{Courtney Jackson}
 \affiliation{%
   \institution{University of Southern Maine}
   \city{Portland}
   \state{Maine}
   \country{USA}}
-\email{second.author@maine.edu}
+\email{courtney.jackson@maine.edu}
 
-\author{Third Author}
+\author{Nathaniel Serrano}
 \affiliation{%
   \institution{University of Southern Maine}
   \city{Portland}
   \state{Maine}
   \country{USA}}
-\email{third.author@maine.edu}
+\email{nathaniel.serrano@maine.edu}
 
 \begin{abstract}
   ...
@@ -37,12 +37,124 @@
 \maketitle
 
 \section{Introduction}
+The test collection consists of 34,308 arXiv papers published in August
+and September 2024. Each paper is provided both as raw HTML scraped from
+the arXiv website and as a processed JSON file containing its identifier,
+title, abstract, and paragraphs. Because the JSON files were produced with
+rule-based extraction, they contain noise such as leftover \LaTeX{} markup
+and merged words, which we discuss in Section~\ref{sec:preprocessing}.
+In total, the collection contains 2,275,574 paragraphs, or about 66 per paper.
 
-\section{Introduction}
+We address two tasks over this collection: \emph{paper retrieval}, which
+returns papers identified by their arXiv ID (in YYMM.NNNNN format), and
+\emph{paragraph retrieval}, which returns individual paragraphs. For each
+query, systems return their top 100 results. Three query sets are
+provided: Train (2,000 queries), Study (200 queries with relevance
+judgments, which we use for all analysis in this paper), and Test (200
+queries whose judgments are withheld). Each set contains 30\% easy, 50\%
+medium, and 20\% hard queries. Relevance is graded on a three-point
+scale: a document that fully addresses the query is relevant (2), one that
+provides useful information without fully addressing it is partially
+relevant (1), and any document not in the judgments is considered
+non-relevant.
 
 \section{Methodology}
+\subsection{Preprocessing}
+\label{sec:preprocessing}
+
+Documents and queries pass through the same preprocessing pipeline, so
+that query terms match the terms stored in the index. All settings are
+read from a YAML configuration file, and a copy of the configuration is
+saved with the processed collections; queries are tokenized with that
+saved copy at search time. The final pipeline applies the following
+steps in order:
+
+\begin{enumerate}
+  \item \textbf{Text cleaning.} Inline mathematics delimited by dollar
+    signs, remaining \LaTeX{} commands (e.g., \texttt{\textbackslash mathcal}),
+    URLs, and numeric citation markers such as ``[5, 6, 7]'' are each
+    replaced with a space.
+  \item \textbf{Lowercasing.}
+  \item \textbf{Tokenization.} Text is split into runs of letters and
+    digits. Underscores act as separators, so a subscript such as
+    \texttt{x\_i} yields \texttt{x} and \texttt{i}.
+  \item \textbf{Token filtering.} Tokens shorter than two characters and
+    tokens consisting only of digits are discarded.
+  \item \textbf{Stopword removal.} Stopwords are frequent function words,
+    such as ``the'' and ``and'', that say little about a document's topic.
+    We use NLTK's English list~\cite{bird2009nltk}, extended with terms
+    common in scientific writing: ``et'', ``al'', ``fig'', ``figure'',
+    ``table'', ``eq'', and ``section''.
+  \item \textbf{Stemming.} Remaining tokens are reduced to stems with the
+    Snowball English stemmer~\cite{porter2001snowball}, so that forms
+    such as ``model'' and ``models'' match.
+\end{enumerate}
+
+The cleaning and filtering steps were motivated by corpus statistics.
+With only lowercasing and stopword removal, the 50 most frequent tokens
+were dominated by mathematical notation rather than words: digits
+(``1'', ``2'', ``0''), single-letter variables (``n'', ``x'', ``k''),
+underscores from subscripts, and \LaTeX{} commands such as ``mathcal''
+and ``mathbb''. Adding these to the stopword list would also remove real
+words such as ``text'' and ``prime'', so we instead remove inline math as
+a whole. A lone dollar sign, such as in a price, would be paired with a
+math delimiter and the text between them deleted, so math spans are only
+removed from paragraphs with an even number of dollar signs. Only 1,458
+paragraphs (0.06\%) contain an unpaired dollar sign. They keep their math
+spans, although \LaTeX{} command removal and the token filters still
+remove most of the resulting tokens.
+
+Table~\ref{tab:cleaning} compares three settings. \emph{Baseline}
+applies only lowercasing, tokenization on letters, digits, and
+underscores, and stopword removal (with ``not'' and ``no'' retained).
+\emph{Cleaned} applies steps 1--5 and no longer retains ``not'' and
+``no'': bag-of-words models cannot use them to express negation, and
+``not'' alone accounted for over 500,000 tokens. \emph{+ Snowball} is the final
+pipeline. Cleaning reduced the collection from 168.0 million to 114.9
+million tokens, a 31.6\% decrease, and all of the 50 most frequent tokens
+became words, such as ``model'', ``data'', and ``using''. It also reduced
+the number of paragraphs longer than 1,000 tokens from 868 to 117; the
+longest Baseline paragraphs were collaboration author lists made up
+largely of \LaTeX{} markup and ORCID identifiers. Stemming leaves the
+number of tokens unchanged but shrinks the vocabulary by a further
+10.7\%, from 659,861 to 589,251 terms. The cost is that some distinct
+words share a stem: ``different'' and ``difference'' both become
+``differ'', and ``generate'', ``generation'', and ``generative'' all
+become ``generat''. Finally, cleaning removes every token from 8,389
+paragraphs, which consisted mostly of mathematical notation; we describe
+how these are handled in Section~\ref{sec:docrep}.
+
+\begin{table}[t]
+  \caption{Paragraph collection statistics under three preprocessing
+    settings, defined in Section~\ref{sec:preprocessing}.}
+  \label{tab:cleaning}
+  \small
+  \begin{tabular}{lrrr}
+    \toprule
+    & Baseline & Cleaned & + Snowball \\
+    \midrule
+    Total tokens           & 167,965,275 & 114,907,087 & 114,907,087 \\
+    Unique terms           & 781,405     & 659,861     & 589,251 \\
+    Terms appearing once   & 367,415     & 297,672     & 272,983 \\
+    Median length          & 58          & 40          & 40 \\
+    90th pct.\ length      & 143         & 104         & 104 \\
+    Longest paragraph      & 32,070      & 20,818      & 20,818 \\
+    Over 1,000 tokens      & 868         & 117         & 117 \\
+    Empty paragraphs       & 429         & 8,389       & 8,389 \\
+    Under 10 tokens        & 82,390      & 230,782     & 230,782 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+\subsection{Document Representation}
+\label{sec:docrep}
+\subsection{Search Interface}
+\subsection{BM25}
+\subsection{TF-IDF}
+\subsection{Evaluation Setup}
 
 \section{Evaluation Results}
+\subsection{Metrics}
+\subsection{Efficiency}
 
 \section{Results Analysis}
 
