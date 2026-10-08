@@ -1,8 +1,6 @@
-import argparse
 import json
 import math
 import os
-import time
 from collections import Counter, defaultdict
 
 # Stopwords set, written with help from Gemini 3.5 Flash
@@ -10,211 +8,201 @@ def load_stopwords(filepath="./config/stopwords.txt"):
     if not os.path.exists(filepath):
         return set()
     with open(filepath, "r", encoding="utf-8") as f:
+        return set(line.strip().lower() for line in f if line.strip())
 
 
-        class VectorSpaceTFIDF:
-            def __init__(self, index_file_path="./src/preprocessing/index.json"):
-                self.index_file_path = index_file_path
-                # List of unique terms (size |V|) -- We need this to bulid the vocabulary
-                self.vocab = []
-                # Mapping: word → vector position index -- What word each index of a vector is representing
-                self.word_to_idx = {}
-                # doc_id → list of floats of length |V| -- Mapping of documents to their vector
-                self.doc_vectors = {}
-                # doc_id → raw document dictionary -- Used to show the results
-                self.documents = {}
-                # term → document frequency -- How often a terms appears in a documents/answers
-                self.df = {}
-                # Total document count
-                self.N = 0
+class VectorSpaceTFIDF:
+    def __init__(self, inverted_index = none, N=0):
+        self.index = inverted_index or {}
+        self.N = 0
+        self.idf = {}
+        self.doc_norms = deafaultdict(float)
 
-            def calculate_document_frequencies(self, doc_term_frequencies):
-                """Calculate document frequency (DF) for every unique term across all documents."""
-                # Complete this to return dictionary of term: document count
-                # calculate_document_frequencies --> sets self.df, term as key, document frequency as value
-                df_counts = defaultdict(int)
-                for counts in doc_term_frequencies.values():
-                    for term in counts.keys():
-                        df_counts[term] += 1
-                self.df = dict(df_counts)
+        if self.index and self.N > 0:
+            self._precompute_idf_and_norms()
 
-            def build_vocabulary(self, term_frequencies, max_vocab_size=20000):
-                """Rank unique corpus words by total collection frequency and retain top-K terms."""
-                # Build vocabulary --> sets self.vocab and self.word_to_idx (what term does each postion represent)
+    def _precompute_weights_and_norms(self):
+        """Precalculates log-IDF values and Euclidean norm (|D|) for every document."""
+        print("Precomputing IDFs and Document Norms...")
+        for term, postings in self.index.items():
+            df = len(postings)
+            if df == 0:
+                continue
 
-                collection_frequencies = Counter()
-                for counts in term_frequencies.values():
-                    collection_frequencies.update(counts)
+            # Standard log10 IDF calculation
+            term_idf = math.log10(self.N / df)
+            self.idf[term] = term_idf
 
-                if max_vocab_size and max_vocab_size < len(collection_frequencies):
-                    top_k_terms = [term for term, _ in collection_frequencies.most_common(max_vocab_size)]
-                else:
-                    top_k_terms = list(collection_frequencies.keys())
+            # Support both dict and list postings format
+            items = postings.items() if isinstance(postings, dict) else postings
 
-                self.vocab = top_k_terms
-                self.word_to_idx = {word: idx for idx, word in enumerate(self.vocab)}
+            # Accumulate squared weights for document length normalization
+            for doc_id, tf in items:
+                if tf > 0 and term_idf > 0:
+                    weight = (1 + math.log10(tf)) * term_idf
+                    self.doc_norms[doc_id] += weight * weight
 
-            def vectorize_documents(self, doc_term_frequencies):
-                vocab_size = len(self.vocab)
-                self.doc_vectors = {}
+        # Apply final square root to finalize Euclidean norms
+        for doc_id in self.doc_norms:
+            self.doc_norms[doc_id] = math.sqrt(self.doc_norms[doc_id])
 
-                for doc_id, counts in doc_term_frequencies.items():
-                    doc_vector = [0.0] * vocab_size
-                    for term, count in counts.items():
-                        if term in self.word_to_idx:
-                            pos = self.word_to_idx[term]
-                            doc_vector[pos] = self.calculate_tf_idf(count, self.df[term])
-                    self.doc_vectors[doc_id] = doc_vector
+    def load_from_index_file(self, index_file_path, num_documents=None):
+        """Load pre-built inverted index from JSON and compute norms."""
+        print(f"Loading inverted index from {index_file_path}...")
+        with open(index_file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        if "index" in data:
+            self.index = data["index"]
+            self.N = num_documents or data.get("N", len(data.get("documents", [])))
+        else:
+            self.index = data
+            if num_documents is None:
+                # Infer total N by union of all document IDs across postings
+                all_docs = set()
+                for postings in self.index.values():
+                    items = postings.keys() if isinstance(postings, dict) else [p[0] for p in postings]
+                    all_docs.update(items)
+                self.N = len(all_docs)
+            else:
+                self.N = num_documents
+
+        self._precompute_weights_and_norms()
             
-            # Loading the index file, help from Gemini 3.5 Flash
-            def index_file(self, data_path, force_reindex=False):
-                # Keep track of term frequencies in each document: doc_term_frequencies
-                    # Doc_id --> {term: frequency}
-                # Keep track of unique words: unique_words
-                """Index raw documents by executing the modular VSM pipeline."""
-                if os.path.exists(self.index_file_path) and not force_reindex:
-                    print(f"Index file '{self.index_file_path}' found. Loading from disk...")
-                    self.load_index()
-                    return
+    # Loading the index file, help from Gemini 3.5 Flash
+    def index_file(self, data_path, force_reindex=False):
+        # Keep track of term frequencies in each document: doc_term_frequencies
+        # Doc_id --> {term: frequency}
+        # Kwep track of unique words: unique_words
+        """Index raw documents by executing the modular VSM pipeline."""
+        if os.path.exists(self.index_file_path) and not force_reindex:
+            print(f"Index file '{self.index_file_path}' found. Loading from disk...")
+            self.load_index()
+            return
 
-                print(f"Indexing source file '{data_path}'...")
-                with open(data_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
+        print(f"Indexing source file '{data_path}'...")
+        with open(data_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
 
-                self.N = len(data)
-                # docid as key, dict "term: frequency" as value
-                doc_term_frequencies = {}
-                unique_words = set()
+        self.N = len(data)
+        # docid as key, dict "term: frequency" as value
+        doc_term_frequencies = {}
+        unique_words = set()
 
-                for doc in data:
-                    doc_id = doc["Id"]
-                    # For results represenation
-                    self.documents[doc_id] = doc
-                    tokens = tokenize_vsm(doc["Text"])
-                    ##
-                    # Complete this part to update doc_term_frequencies and unique words
-                    ##
-                    doc_term_frequencies[doc_id] = Counter(tokens)
-                    unique_words.update(tokens)
+        for doc in data:
+            doc_id = doc["Id"]
+            # For results represenation
+            tokens = tokenize_vsm(doc["Text"])
+            ##
+            # Complete this part to update doc_term_frequencies and unique words
+            ##
+            doc_term_frequencies[doc_id] = Counter(tokens)
+            unique_words.update(tokens)
 
-                # Calculates document frequency for each term
-                self.calculate_document_frequencies(doc_term_frequencies)
-                # Build vocabulary and mapping of vocabularies to indicies
-                self.build_vocabulary(doc_term_frequencies)
+        # Calculates document frequency for each term
+        self.calculate_document_frequencies(doc_term_frequencies)
+        # Build vocabulary and mapping of vocabularies to indicies
+        self.build_vocabulary(doc_term_frequencies)
 
-                # Do this last; you may event comment it out for now
-                self.vectorize_documents(doc_term_frequencies)
+        # Do this last; you may event comment it out for now
+        self.vectorize_documents(doc_term_frequencies)
 
-                print(f"Vocabulary size |V|: {len(self.vocab)} unique terms across {self.N} documents.")
-                self.save_index()
+        print(f"Vocabulary size |V|: {len(self.vocab)} unique terms across {self.N} documents.")
+        self.save_index()
 
-            def calculate_tf_idf(self, count, df_val):
-                if count <= 0 or df_val <= 0 or self.N == 0:
-                    return 0.0
-                tf = 1 + math.log10(count)
-                idf = math.log10(self.N / df_val)
-                return tf * idf
-                pass
+    def calculate_tf_idf(self, count, df_val):
+        if count <= 0 or df_val <= 0 or self.N == 0:
+            return 0.0
+        tf = 1 + math.log10(count)
+        idf = math.log10(self.N / df_val)
+        return tf * idf
 
-            # Saving the index file, help from Gemini 3.5 Flash
-            def save_index(self):
-                os.makedirs(os.path.dirname(self.index_file_path) or ".", exist_ok=True)
-                index_data = {
-                    "N": self.N,
-                    "vocab": self.vocab,
-                    "df": self.df,
-                    "doc_vectors": self.doc_vectors,
-                    "documents": self.documents
-                }
-                with open(self.index_file_path, "w", encoding="utf-8") as f:
-                    json.dump(index_data, f)
-                print(f"Index successfully saved to {self.index_file_path}")
+    # Saving the index file, help from Gemini 3.5 Flash
+    def save_index(self):
+        os.makedirs(os.path.dirname(self.index_file_path) or ".", exist_ok=True)
+        index_data = {
+            "N": self.N,
+            "vocab": self.vocab,
+            "df": self.df,
+            "doc_vectors": self.doc_vectors,
+        }
+        with open(self.index_file_path, "w", encoding="utf-8") as f:
+            json.dump(index_data, f)
+        print(f"Index successfully saved to {self.index_file_path}")
 
-            # Loading the index file, help from Gemini 3.5 Flash
-            def load_index(self):
-                with open(self.index_file_path, "r", encoding="utf-8") as f:
-                    index_data = json.load(f)
+    # Loading the index file, help from Gemini 3.5 Flash
+    def load_index(self):
+        with open(self.index_file_path, "r", encoding="utf-8") as f:
+            index_data = json.load(f)
 
-                self.N = index_data["N"]
-                self.vocab = index_data["vocab"]
-                self.word_to_idx = {word: idx for idx, word in enumerate(self.vocab)}
-                self.df = index_data["df"]
-                self.doc_vectors = index_data["doc_vectors"]
-                self.documents = index_data["documents"]
+        self.N = index_data["N"]
+        self.vocab = index_data["vocab"]
+        self.word_to_idx = {word: idx for idx, word in enumerate(self.vocab)}
+        self.df = index_data["df"]
+        self.doc_vectors = index_data["doc_vectors"]
 
-            def vectorize_query(self, query_tokens):
-                """Convert query tokens into a TF-IDF vector matching the vocabulary space."""
-                vocab_size = len(self.vocab)
-                query_vector = [0.0] * vocab_size
-                query_counts = Counter(query_tokens)
+    def vectorize_query(self, query_tokens):
+        """Convert query tokens into a TF-IDF vector matching the vocabulary space."""
+        vocab_size = len(self.vocab)
+        query_vector = [0.0] * vocab_size
+        query_counts = Counter(query_tokens)
 
-                for term, count in query_counts.items():
-                    if term in self.word_to_idx:
-                        pos = self.word_to_idx[term]
-                        df_val = self.df.get(term, 0)
-                        query_vector[pos] = self.calculate_tf_idf(count, df_val)
+        for term, count in query_counts.items():
+            if term in self.word_to_idx:
+                pos = self.word_to_idx[term]
+                df_val = self.df.get(term, 0)
+                query_vector[pos] = self.calculate_tf_idf(count, df_val)
 
-                return query_vector
+        return query_vector
 
-            def cosine_similarity(self, vec1, vec2):
-                """Calculate cosine similarity between two dense vectors."""
-                dot_product = sum(a * b for a, b in zip(vec1, vec2))
-                norm1 = math.sqrt(sum(a * a for a in vec1))
-                norm2 = math.sqrt(sum(b * b for b in vec2))
+    # Search function, help from Gemini 3.5 Flash
+    def search(self, query_tokens, top_k=100):
+        """Search the document collection using cosine similarity."""
+        if not query_tokens or not self.index:
+            return []
+        
+        query_counts = Counter(query_tokens)
+        query_weights = {}
+        query_norm_sq = 0.0
 
-                if norm1 == 0 or norm2 == 0:
-                    return 0.0
-                return dot_product / (norm1 * norm2)
+        # 1. Calculate query weights and total query vector norm
+        for term, count in query_counts.items():
+            if term in self.idf and self.idf[term] > 0:
+                tf_q = 1 + math.log10(count)
+                weight_q = tf_q * self.idf[term]
+                query_weights[term] = weight_q
+                query_norm_sq += weight_q * weight_q
 
-            def search(self, query_tokens, top_k=5):
-                """Search the document collection using cosine similarity."""
-                query_vec = self.vectorize_query(query_tokens)
-                scores = []
+        if not query_weights or query_norm_sq == 0:
+            return []
 
-                for doc_id, doc_vec in self.doc_vectors.items():
-                    score = self.cosine_similarity(query_vec, doc_vec)
-                    if score > 0:
-                        scores.append((doc_id, score))
+        query_norm = math.sqrt(query_norm_sq)
+        doc_scores = defaultdict(float)
 
-                # Sort by similarity score in descending order
-                scores.sort(key=lambda x: x[1], reverse=True)
-                return scores[:top_k]
+        # 2. Accumulate dot product only for docs containing query terms
+        for term, q_weight in query_weights.items():
+            postings = self.index[term]
+            items = postings.items() if isinstance(postings, dict) else postings
+
+            for doc_id, doc_tf in items:
+                if doc_tf > 0:
+                    doc_weight = (1 + math.log10(doc_tf)) * self.idf[term]
+                    doc_scores[doc_id] += q_weight * doc_weight
+
+        # 3. Calculate Cosine Similarity: dot_product / (query_norm * doc_norm)
+        results = []
+        for doc_id, dot_product in doc_scores.items():
+            d_norm = self.doc_norms.get(doc_id, 0.0)
+            if d_norm > 0:
+                similarity = dot_product / (query_norm * d_norm)
+                results.append((doc_id, similarity))
+
+        # 4. Sort descending by score
+        results.sort(key=lambda x: x[1], reverse=True)
+        return results[:top_k]
 
     if __name__ == "__main__":
-        parser = argparse.ArgumentParser(description="TF-IDF Vector Space Model")
-
-        parser.add_argument("--data", "-d", default=r"Train.json", help="Path to input data JSON file",)
-        parser.add_argument("--index", "-i", default="Session 7/vsm_index.json", help="Path to saved VSM index file",)
-        parser.add_argument("--stopwords", "-s", default="stopwords.txt", help="Path to custom stopwords file",)
-        parser.add_argument("--query", "-q", default="Maine travel guideline", help="Query string to search",)
-        parser.add_argument("--top_k", "-k", type=int, default=5, help="Number of top results to return",)
-        parser.add_argument("--force-reindex", action="store_true", help="Force rebuild of index file",)
-
-        args = parser.parse_args()
-
-        # Load custom stopwords
-        stopwords = load_stopwords(args.stopwords)
-
-        retriever = VectorSpaceTFIDF(index_file_path=args.index)
-        start_index_time = time.perf_counter()
-
-        retriever.index_file(args.data, force_reindex=args.force_reindex)
-        index_execution_time = (time.perf_counter() - start_index_time) * 1000
-        print(f"Indexing completed in {index_execution_time:.2f} ms")
-
-        # Example query execution (Simple whitespace tokenization & lowercase filtering)
-        if args.query:
-            query_tokens = [
-                word.lower()
-                for word in args.query.split()
-                if word.lower() not in stopwords
-            ]
-            results = retriever.search(query_tokens, top_k=args.top_k)
-
-            print(f"\nTop {args.top_k} results for query: '{args.query}'")
-            for doc_id, score in results:
-                doc_info = retriever.documents.get(doc_id, {})
-                print(f"Doc ID: {doc_id} | Score: {score:.4f}")
+        
 
     # Should want to save intergers, save term frequency values, and use that to calucate the scores, 
     # instead of saving the tf-idf values. 
