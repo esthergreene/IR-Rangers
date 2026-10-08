@@ -18,6 +18,7 @@ from src.common.queries import load_queries
 from src.common.trec import run_filename, write_run
 from src.index.indexer import CorpusIndex
 from src.model.bm25 import BM25Model
+from src.model.tfidf import TFIDFModel
 from src.preprocessing.tokenizer import Tokenizer
 
 RAW_DIR = REPO_ROOT / "data" / "raw"
@@ -61,7 +62,7 @@ def main():
     if args.model.lower() == "bm25":
         model = BM25Model(index, k1=args.k1, b=args.b)
     elif args.model.lower() == "tfidf":
-        model = TFIDFModel(index)  # Fake name for now
+        model = TFIDFModel(index)
     else:
         raise ValueError(f"Unknown model: {args.model}")
     
