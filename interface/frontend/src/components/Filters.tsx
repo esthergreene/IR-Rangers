@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import type { SearchResult } from "../api";
 import {
   DEFAULT_FILTERS,
+  NONE_FILTERS,
   DOCUMENT_TYPES,
   SINCE_OPTIONS,
   passes,
@@ -179,9 +180,8 @@ function FilterForm({
       </div>
 
       <div className="flex items-center justify-between gap-3 border-t border-rule pt-3">
-        {/* CJ Notes: Flawed logic, when clear filters is clicked it should reset all filters to unchecked and not set them all to checked */}
         <div>
-          <TextButton onClick={() => setStaged(DEFAULT_FILTERS)}>
+          <TextButton onClick={() => setStaged(NONE_FILTERS)}>
             Clear filters
           </TextButton>
           <TextButton onClick={() => setStaged(DEFAULT_FILTERS)}>

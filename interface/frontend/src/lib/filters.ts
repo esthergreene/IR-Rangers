@@ -19,6 +19,8 @@ export interface Filters {
 
 export const DEFAULT_FILTERS: Filters = { types: new Set(DOCUMENT_TYPES), since: 0 }
 
+export const NONE_FILTERS: Filters = {types: new Set(), since: 0}
+
 export const passes = (f: Filters) => (r: SearchResult) => f.types.has(r.type) && r.year >= f.since
 
 export function activeFilterCount(f: Filters): number {
