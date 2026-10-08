@@ -268,6 +268,9 @@ export default function App() {
               onAddKeyword={addKeyword}
               onRemoveKeyword={removeKeyword}
               onReset={() => highlights.sweepIn(vocab.reset())}
+              onClear={() =>
+                vocab.clear().forEach((key) => highlights.fadeOut(key))
+              }
               onDone={() => closeVocab(true)}
             />
             <FilterPanel

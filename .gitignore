@@ -30,6 +30,8 @@ env/
 .idea/
 .vscode/
 *.swp
+# Generated search indexes
+*_index.json
 
 # ── Paper ──────────────────────────────────────────────────────────
 paper/paper.aux
