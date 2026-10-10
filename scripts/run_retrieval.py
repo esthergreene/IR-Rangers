@@ -1,3 +1,4 @@
+
 """
 Run a retrieval model over a query file and write a TREC-formatted run file.
 
@@ -16,21 +17,21 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from src.common.queries import load_queries
 from src.common.trec import run_filename, write_run
-from src.index.indexer import CorpusIndex
+from src.index.indexer import load_index as load_saved_index
 from src.model.bm25 import BM25Model
 from src.model.tfidf import TFIDFModel
 from src.preprocessing.tokenizer import Tokenizer
 
 RAW_DIR = REPO_ROOT / "data" / "raw"
 QUERY_FILES = {"train": "Train.json", "study": "Study.json", "test": "Test.json"}
-COLLECTION_FILES = {"paper": "papers.json", "paragraph": "paragraphs.json"}
+COLLECTION_FILES = {"paper": "paper_index.json", "paragraph": "paragraph_index.json"}
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run a retrieval model and write a TREC run file.")
     parser.add_argument("--collection", choices=sorted(COLLECTION_FILES), required=True, help="Collection to use for retrieval")
     parser.add_argument("--queries", choices=sorted(QUERY_FILES), required=True, help="Query set to use for retrieval")
     parser.add_argument("--model", choices=["bm25", "tfidf"], default="bm25", help="Retrieval model to use (default: bm25)")
-    parser.add_argument("--processed", type=Path, default=REPO_ROOT / "data" / "processed", help="Folder written by build_collections.py")
+    parser.add_argument("--processed", type=Path, default=REPO_ROOT / "data" / "processed", help="Folder containing the saved indexes")
     parser.add_argument("--output", type=Path, default=REPO_ROOT / "runs", help="Folder to write the run file to (default: runs/)")
     parser.add_argument("--k", type=int, default=100, help="Results per query (default: 100)")
     parser.add_argument("--k1", type=float, default=0.9, help="BM25 k1 parameter (default: 0.9)")
@@ -43,7 +44,7 @@ def load_index(collection, processed_dir):
     """
     Load the index for one collection.
     """
-    return CorpusIndex.load_index(processed_dir / COLLECTION_FILES[collection])
+    return load_saved_index(processed_dir / COLLECTION_FILES[collection])
 
 def main():
     args = parse_args()
@@ -68,10 +69,10 @@ def main():
     
     print(f"  {index.num_docs:,} documents, ready in {time.perf_counter() - start:.1f}s")
 
-    results = []
+    results = {}
     search_seconds = 0.0
     for query in queries:
-        tokens = tokenizer.tokenize(query["query_text"])
+        tokens = tokenizer.tokenize(query.text)
         # Timed: Search only, not query tokenization or other overhead.
         start = time.perf_counter()
         results[query.query_id] = model.search(tokens, k=args.k)
