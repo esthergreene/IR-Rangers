@@ -1,26 +1,27 @@
+"""
+This file handles building the inverted indexes for our paper and
+paragraph collections.
+
+Instead of reading and processing all the original papers again,
+the indexer uses the preprocessed JSONL files that we already created.
+Each document has an ID and a list of tokens that we can use to
+build the index.
+
+For each document, we keep track of which terms appear, how often
+they appear, and which document they came from. We also calculate
+document lengths and the average length across the collection.
+
+All of this information gets stored in posting lists so our BM25
+and TF-IDF models can use it when searching for relevant documents.
+
+To build both indexes, run:
+    python -m src.index.indexer
+
+The finished indexes are saved in data/processed/.
+"""
+
 import json
-import os
 from collections import Counter
-from src.preprocessing.tokenizer import tokenize_text
-
-DATA_FOLDER = os.path.expanduser("~/datasets/IR26/JSON Files")
-
-def preprocess(text):
-    return tokenize_text(text)
-
-def load_paper(file_path):
-    with open(file_path, "r", encoding="utf-8") as file:
-        paper = json.load(file)
-
-    return paper
-
-def get_paper_text(paper):
-    paper_text = paper["title"] + " " + paper["abstract"]
-
-    for paragraph in paper["paragraphs"].values():
-        paper_text += " " + paragraph
-    
-    return paper_text
 
 def save_json(data, file_path):
     with open(file_path, "w", encoding="utf-8") as file:
@@ -88,82 +89,69 @@ def load_index(file_path):
         data = json.load(file)
 
     return CorpusIndex.from_dict(data)
-        
-def build_paper_index(json_files):
-    paper_index = CorpusIndex()
 
-    for filename in json_files:
-        file_path = os.path.join(DATA_FOLDER, filename)
-        paper = load_paper(file_path)
-        paper_text = get_paper_text(paper)
-        paper_tokens = preprocess(paper_text)
-        term_frequencies = Counter(paper_tokens)
-        doc_number = paper_index.num_docs
-        paper_index._doc_ids.append(paper["paper_id"])
-        paper_index._doc_numbers[paper["paper_id"]] = doc_number
-        paper_index.doc_lengths.append(len(paper_tokens))
+def build_index_from_jsonl(file_path):
+    """So here I am building an inverted index from a preprocessed JSONL collection. Fingers crossed."""
+    index = CorpusIndex()
 
-        for term, frequency in term_frequencies.items():
-            if term not in paper_index._postings:
-                paper_index._postings[term] = ([], [])
+    with open(file_path, "r", encoding="utf-8") as file:
+        for line in file:
+            record = json.loads(line)
 
-            paper_index._postings[term][0].append(doc_number)
-            paper_index._postings[term][1].append(frequency)
+            doc_id = record["doc_id"]
+            tokens = record["tokens"]
+            doc_number = index.num_docs
 
-        paper_index.num_docs += 1
-        
-    if paper_index.num_docs > 0:
-        paper_index.avg_doc_length = sum(paper_index.doc_lengths) / paper_index.num_docs
+            index._doc_ids.append(doc_id)
+            index._doc_numbers[doc_id] = doc_number
+            index.doc_lengths.append(len(tokens))
 
-    return paper_index
-
-def build_paragraph_index(json_files):
-    paragraph_index = CorpusIndex()
-
-    for filename in json_files:
-        file_path = os.path.join(DATA_FOLDER, filename)
-        paper = load_paper(file_path)
-
-        for paragraph_id, paragraph_text in paper["paragraphs"].items():
-            paragraph_tokens = preprocess(paragraph_text)
-            term_frequencies = Counter(paragraph_tokens)
-            doc_number = paragraph_index.num_docs
-            paragraph_index._doc_ids.append(paragraph_id)
-            paragraph_index._doc_numbers[paragraph_id] = doc_number
-            paragraph_index.doc_lengths.append(len(paragraph_tokens))
+            term_frequencies = Counter(tokens)
 
             for term, frequency in term_frequencies.items():
-                if term not in paragraph_index._postings:
-                    paragraph_index._postings[term] = ([], [])
+                if term not in index._postings:
+                    index._postings[term] = ([], [])
 
-                paragraph_index._postings[term][0].append(doc_number)
-                paragraph_index._postings[term][1].append(frequency)
+                index._postings[term][0].append(doc_number)
+                index._postings[term][1].append(frequency)
 
-            paragraph_index.num_docs += 1
+            index.num_docs += 1
 
-    if paragraph_index.num_docs > 0:
-        paragraph_index.avg_doc_length = sum(paragraph_index.doc_lengths) / paragraph_index.num_docs
+    if index.num_docs > 0:
+        index.avg_doc_length = sum(index.doc_lengths) / index.num_docs
 
-    return paragraph_index
+    return index
 
 if __name__ == "__main__":
-    files = os.listdir(DATA_FOLDER)
-    json_files = sorted([file for file in files if file.endswith(".json")])
+    from pathlib import Path
 
-    print("Number of JSON files:", len(json_files))
+    repo_root = Path(__file__).resolve().parents[2]
+    processed_dir = repo_root / "data" / "processed"
 
-    paper_index = build_paper_index(json_files)
+    # Build the paper index from the preprocessed collection.
+    print("Building paper index...")
+    paper_index = build_index_from_jsonl(processed_dir / "papers.jsonl")
+
     print("Papers indexed:", paper_index.num_docs)
     print("Unique terms in paper index:", len(paper_index.vocabulary()))
     print("Average paper length:", paper_index.avg_doc_length)
 
-    save_json(paper_index.to_dict(), "paper_index.json")
+    save_json(
+        paper_index.to_dict(),
+        processed_dir / "paper_index.json"
+    )
 
     del paper_index
 
-    paragraph_index = build_paragraph_index(json_files)
+    # Build the paragraph index from the preprocessed collection.
+    print("Building paragraph index...")
+    paragraph_index = build_index_from_jsonl(processed_dir / "paragraphs.jsonl")
+
     print("Paragraphs indexed:", paragraph_index.num_docs)
     print("Unique terms in paragraph index:", len(paragraph_index.vocabulary()))
     print("Average paragraph length:", paragraph_index.avg_doc_length)
 
-    save_json(paragraph_index.to_dict(), "paragraph_index.json")
+    save_json(
+        paragraph_index.to_dict(),
+        processed_dir / "paragraph_index.json"
+    )
