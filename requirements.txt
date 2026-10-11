@@ -1,8 +1,5 @@
-bs4
+beautifulsoup4
 nltk
 pyyaml
-json
-math
-os
-time
-collections
+fastapi
+uvicorn
