@@ -20,7 +20,9 @@ Usage:
 """
 import heapq
 import math
-from collections import defaultdict
+from collections import Counter, defaultdict
+
+import numpy as np
 
 class BM25Model:
     """
@@ -47,6 +49,8 @@ class BM25Model:
         """
         self.corpus_index = corpus_index
         self.idf = self._compute_idf()
+        self._doc_lengths = np.asarray(corpus_index.doc_lengths, dtype=np.float64)
+        self._postings_cache = {} # term -> (dock numbers, term frequencies) as arrays
         self.set_params(k1, b)
 
     def set_params(self, k1, b):
@@ -85,18 +89,41 @@ class BM25Model:
 
             doc_id(i): the document ID string for internal document number i
         """
-        scores = defaultdict(float)
-        for term in query_tokens:
+        scores = np.zeros(self.corpus_index.num_docs, dtype=np.float64)
+        k1_plus_1 = self.k1 + 1
+
+        for term, query_count in Counter(query_tokens).items():
             idf = self.idf.get(term)
             if idf is None: # term not in the index
                 continue
-            doc_numbers, term_frequencies = self.corpus_index.postings(term)
-            for doc_number, tf in zip(doc_numbers, term_frequencies):
-                scores[doc_number] += self._term_score(idf, tf, doc_number)
-            
-        # Highest score first; equal scores ordered by internal document number.
-        top = heapq.nsmallest(k, scores.items(), key=lambda item: (-item[1], item[0]))
-        return [(self.corpus_index.doc_id(doc_number), score) for doc_number, score in top]
+            doc_numbers, term_frequencies = self._postings_array(term)
+            weight = query_count * idf * k1_plus_1
+
+            # Every document in the term's postings at once. Each document appears
+            # at most once in a term's postings, so += with an index array is safe
+            scores[doc_numbers] += (
+                weight * term_frequencies / (term_frequencies + self.length_norm[doc_numbers])
+            )
+        
+        # Every matched document has a positive score, since IDF and tf are positive
+        candidates = np.flatnonzero(scores)
+        if candidates.size == 0:
+            return []
+        candidate_scores = scores[candidates]
+
+        if candidates.size > k:
+            # Keep everything scoring at least the k-th highest score. This includes
+            # all documents tied at the cutoff, so the tie-break below stays exact.
+            cutoff = np.partition(candidate_scores, candidates.size - k)[candidates.size - k]
+            keep = candidate_scores >= cutoff
+            candidates, candidate_scores = candidates[keep], candidate_scores[keep]
+        
+        # Sort by score (highest first), then by document number for ties
+        order = np.lexsort((candidates, -candidate_scores))[:k]
+        return [
+            (self.corpus_index.doc_id(int(doc_number)), float(score))
+            for doc_number, score in zip(candidates[order], candidate_scores[order])
+        ]
     
     def score(self, query_tokens, doc_id):
         """
@@ -165,13 +192,32 @@ class BM25Model:
         once per document per query term.
 
         Returns:
-            Per-document values, in the same order as the index's doc_lengths.
+            Numpy array of Per-document values, in the same order as the index's doc_lengths.
         """
         avg_length = self.corpus_index.avg_doc_length
-        return [
-            self.k1 * (1 - self.b + self.b * length / avg_length)
-            for length in self.corpus_index.doc_lengths
-        ]
+        # return [
+        #     self.k1 * (1 - self.b + self.b * length / avg_length)
+        #     for length in self.corpus_index.doc_lengths
+        # ]
+        return self.k1 * (1 - self.b + self.b * self._doc_lengths / avg_length)
+    
+    def _postings_array(self, term):
+        """
+        Return a term's postings as numpy arrays, converting them on first use.
+
+        The index stores postings as Python lists. Converting a long list takes
+        a few ms, so the result is cached: during tuning, the same query terms are
+        searched once per grid cell.
+        """
+        cached = self._postings_cache.get(term)
+        if cached is None:
+            doc_numbers, term_frequencies = self.corpus_index.postings(term)
+            cached = (
+                np.asarray(doc_numbers, dtype=np.int32),
+                np.asarray(term_frequencies, dtype=np.float32),
+            )
+            self._postings_cache[term] = cached
+        return cached
     
     @staticmethod
     def _validate_params(k1, b):

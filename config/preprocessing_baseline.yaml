@@ -1,0 +1,24 @@
+# Baseline preprocessing: the settings of the first corpus statistics run,
+# reported as the "Baseline" column of the cleaning table in the paper.
+# Lowercasing and stopword removal only: no text cleaning, no token filters,
+# no stemming.
+#
+# Reproduce with:
+#   python scripts/corpus_stats.py --config config/preprocessing_baseline.yaml
+
+cleaning:
+  remove_math: false
+  remove_urls: false
+  remove_citations: false
+
+tokenizer:
+  lowercase: true
+  split_underscores: false  # old token pattern \w+, which keeps "_" inside tokens
+  min_token_length: 1       # no length filter
+  drop_numeric: false       # keep digit-only tokens
+  stopwords:
+    source: nltk
+    custom_file: config/stopwords.txt
+    extra: ['et', 'al', 'fig', 'figure', 'table', 'eq', 'section']
+    keep: ['not', 'no']     # the baseline still kept these
+  stemming: none
