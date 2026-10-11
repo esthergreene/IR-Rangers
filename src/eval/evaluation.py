@@ -1,69 +1,118 @@
+"""
+Evaluation script for retrieval outputs.
+Takes TREC-formatted run files (qid, Q0, docid, rank, score, runid) 
+found in runs/ and evaluates them against qrels using ranx.
+Supports graded and strict metrics, as well as statistical significance testing.
+"""
+
 from ranx import Qrels, Run, evaluate, compare
-from src.common.queries import load_queries
 import argparse
 import sys
+from pathlib import Path
+
+# Repository root setup to avoid absolute filesystem root bugs
+REPO_ROOT = Path(__file__).resolve().parents[2]
+RAW_DIR = REPO_ROOT / "data" / "raw"
+RUNS_DIR = REPO_ROOT / "runs"
 
 
-def evaluate_metrics_at_2(qrels, run):
-    qrels.set_relevance_level(rel_lvl=2)
-    metrics = ["nDCG","nDCG@5", "MRR", "precision@5", "precision@10"]
-    eval_res = evaluate(qrels, run, metrics, make_comparable=True)
-    print(eval_res)
+def evaluate_graded(qrels, run):
+    """Evaluates metrics using graded relevance (includes levels 1 and 2)."""
+    # Note: Do not call set_relevance_level here so it uses all graded levels (0/1/2)
+    metrics = ["mrr", "precision@5", "ndcg@10"]
+    return evaluate(qrels, run, metrics, make_comparable=True)
 
-def evaluate_metrics_at_1(qrels, run):
-    qrels.set_relevance_level(rel_lvl=1)
-    metrics = ["MRR", "precision@5"]
-    eval_res = evaluate(qrels, run, metrics, make_comparable=True)
-    print(eval_res)
+
+def evaluate_strict(qrels_strict, run):
+    """Evaluates metrics using strict relevance (level 2 only)."""
+    qrels_strict.set_relevance_level(rel_lvl=2)
+    metrics = ["ndcg", "ndcg@5", "precision@5", "precision@10"]
+    return evaluate(qrels_strict, run, metrics, make_comparable=True)
+
+
+def run_significance_test(qrels, run_bm25, run_tfidf, metrics, title):
+    """Performs statistical significance testing (Student's t-test) between two models."""
+    print(f"\n================ {title} ================")
+    report = compare(
+        qrels=qrels, 
+        runs=[run_bm25, run_tfidf], 
+        metrics=metrics, 
+        stat_test="student"
+    )
+    print(report)
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate retrieval outputs against qrels.")
-    parser.add_argument("--collection", choices=["train", "test", "study"], required=True, help="Collection to use for evaluation")
-
+    parser.add_argument(
+        "--queries", 
+        choices=["train", "study"], 
+        required=True, 
+        help="Query set to evaluate (train or study; test qrels are withheld)"
+    )
     return parser.parse_args()
+
 
 def main():
     args = parse_args()
-    if parse_args == "test":
-        run_bm25 = Run.from_file("/runs/test_bm25_qrel.tsv", kind="trec")
-        run_tfidf = Run.from_file("/runs/test_tfidf_qrel.tsv", kind="trec")
-        qrels_paper = Qrels.from_file("/data/raw/Test_paper_qrel.tsv", kind="trec")
-        qrels_paragraph = Qrels.from_file("/data/raw/Test_paragraph_qrel.tsv", kind="trec")
-    elif parse_args == "train":
-        run_bm25 = Run.from_file("/runs/test_bm25_qrel.tsv", kind="trec")
-        run_tfidf = Run.from_file("/runs/test_tfidf_qrel.tsv", kind="trec")
-        qrels_paper = Qrels.from_file("/data/raw/Test_paper_qrel.tsv", kind="trec")
-        qrels_paragraph = Qrels.from_file("/data/raw/Test_paragraph_qrel.tsv", kind="trec")
-    elif parse_args == "study":
-        run_bm25 = Run.from_file("/runs/study_bm25_qrel.tsv", kind="trec")
-        run_tfidf = Run.from_file("/runs/study_tfidf_qrel.tsv", kind="trec")
-        qrels_paper = Qrels.from_file("/data/raw/Test_paper_qrel.tsv", kind="trec")
-        qrels_paragraph = Qrels.from_file("/data/raw/Test_paragraph_qrel.tsv", kind="trec")
-    else:
-        sys.exit("--collection must me either train, test, or study")
     
-    runs = [run_bm25, run_tfidf]
-    qrels = [qrels_paper, qrels_paragraph]
+    qset = args.queries 
+    
+    # 1. Load Qrels for paper and paragraph (create separate instances for graded vs strict)
+    qrels_paper_path = RAW_DIR / f"{qset.capitalize()}_paper_qrel.tsv"
+    qrels_paragraph_path = RAW_DIR / f"{qset.capitalize()}_paragraph_qrel.tsv"
+    
+    # Graded Qrels (keeps all relevance grades)
+    qrels_paper_graded = Qrels.from_file(qrels_paper_path, kind="trec")
+    qrels_paragraph_graded = Qrels.from_file(qrels_paragraph_path, kind="trec")
+    
+    # Strict Qrels (will be filtered to level 2)
+    qrels_paper_strict = Qrels.from_file(qrels_paper_path, kind="trec")
+    qrels_paragraph_strict = Qrels.from_file(qrels_paragraph_path, kind="trec")
 
-    metrics_at_2 = evaluate_metrics_at_2(qrels, runs)
-    metrics_at_1 = evaluate_metrics_at_1(qrels, runs)
+    # 2. Load the 4 runs ({paper, paragraph} x {bm25, tfidf})
+    run_paper_bm25 = Run.from_file(RUNS_DIR / f"paper_bm25_{qset}.tsv", kind="trec")
+    run_paper_tfidf = Run.from_file(RUNS_DIR / f"paper_tfidf_{qset}.tsv", kind="trec")
+    run_paragraph_bm25 = Run.from_file(RUNS_DIR / f"paragraph_bm25_{qset}.tsv", kind="trec")
+    run_paragraph_tfidf = Run.from_file(RUNS_DIR / f"paragraph_tfidf_{qset}.tsv", kind="trec")
+
+    # 3. Evaluate Paper Runs
+    print("\n--- PAPER COLLECTION EVALUATION ---")
+    print("Graded Evaluation (Paper):")
+    print(evaluate_graded(qrels_paper_graded, run_paper_bm25))
+    print(evaluate_graded(qrels_paper_graded, run_paper_tfidf))
+    
+    print("\nStrict Evaluation (Paper):")
+    print(evaluate_strict(qrels_paper_strict, run_paper_bm25))
+    print(evaluate_strict(qrels_paper_strict, run_paper_tfidf))
+
+    # 4. Evaluate Paragraph Runs
+    print("\n--- PARAGRAPH COLLECTION EVALUATION ---")
+    print("Graded Evaluation (Paragraph):")
+    print(evaluate_graded(qrels_paragraph_graded, run_paragraph_bm25))
+    print(evaluate_graded(qrels_paragraph_graded, run_paragraph_tfidf))
+    
+    print("\nStrict Evaluation (Paragraph):")
+    print(evaluate_strict(qrels_paragraph_strict, run_paragraph_bm25))
+    print(evaluate_strict(qrels_paragraph_strict, run_paragraph_tfidf))
+
+    # 5. Run Statistical Significance Comparisons (BM25 vs TF-IDF)
+    run_significance_test(
+        qrels=qrels_paper_graded,
+        run_bm25=run_paper_bm25,
+        run_tfidf=run_paper_tfidf,
+        metrics=["mrr", "ndcg@10", "precision@5"],
+        title="Paper Models Significance Test (BM25 vs TF-IDF)"
+    )
+
+    run_significance_test(
+        qrels=qrels_paragraph_graded,
+        run_bm25=run_paragraph_bm25,
+        run_tfidf=run_paragraph_tfidf,
+        metrics=["mrr", "ndcg@10", "precision@5"],
+        title="Paragraph Models Significance Test (BM25 vs TF-IDF)"
+    )
 
 
 if __name__ == "__main__":
     main()
-
-# retrievel outputs tsv file (take in a tsv file, found in runs/)
-# Needs to iterate therough lines and give the metrics for everything
-# qid, Q0, docid rank score runid
-# iterate throuhg each line and evalute (whole file) on each metric
-# when I run the eval script from command line, add argument where it will be --collection flag, 
-# and then it will know which qrel to use.
-# import the load file from queries.py
-# qrel is the source of truth, the actually grade of the searhc results against the queies 
-# in the proper order ex doc 12 is ranked 1 for this query if that is the case in the qrel treat that as 
-# fact, point of qrel is something to comapre againt. queies is the test.json. this script will compares the qrel 
-# vs our run. Flag to pass what query the user wants to evaluate (study, test, or train)
-# be able to change the relevance setting, for mrr precision need consider 1 and 2 
-# statistic signifacane testing between the two models (idf vs bm25)
-# print a table with the metrics
