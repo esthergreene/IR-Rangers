@@ -9,6 +9,7 @@ from ranx import Qrels, Run, evaluate, compare
 import argparse
 import sys
 from pathlib import Path
+from src.common.trec import run_filename
 
 # Repository root setup to avoid absolute filesystem root bugs
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -87,10 +88,15 @@ def main():
     qrels_paragraph_strict = load_strict_qrels(qrels_paragraph_path)
 
     # 2. Load the 4 runs ({paper, paragraph} x {bm25, tfidf})
-    run_paper_bm25 = Run.from_file(RUNS_DIR / f"paper_bm25_{qset}.tsv", kind="trec")
-    run_paper_tfidf = Run.from_file(RUNS_DIR / f"paper_tfidf_{qset}.tsv", kind="trec")
-    run_paragraph_bm25 = Run.from_file(RUNS_DIR / f"paragraph_bm25_{qset}.tsv", kind="trec")
-    run_paragraph_tfidf = Run.from_file(RUNS_DIR / f"paragraph_tfidf_{qset}.tsv", kind="trec")
+    run_paper_bm25 = Run.from_file(str(RUNS_DIR / run_filename("paper", "bm25", qset)), kind="trec")
+    run_paper_tfidf = Run.from_file(str(RUNS_DIR / run_filename("paper", "tfidf", qset)), kind="trec")
+    run_paragraph_bm25 = Run.from_file(str(RUNS_DIR / run_filename("paragraph", "bm25", qset)), kind="trec")
+    run_paragraph_tfidf = Run.from_file(str(RUNS_DIR / run_filename("paragraph", "tfidf", qset)), kind="trec")
+
+    # Names used as row labels in the significance tables
+    run_paper_bm25.name = run_paragraph_bm25.name = "BM25"
+    run_paper_tfidf.name = run_paragraph_tfidf.name = "TF-IDF"
+
 
     # 3. Evaluate Paper Runs
     print("\n--- PAPER COLLECTION EVALUATION ---")
