@@ -1,3 +1,29 @@
+
+"""
+This file handles evaluating how well our search models retrieve
+relevant papers and paragraphs using nDCG.
+
+We use the relevance judgments from our qrel files to compare
+the documents our models retrieved against what was actually
+considered relevant for each query.
+
+We calculate DCG, which gives more credit to relevant
+documents that appear higher in the search results. Then we
+calculate nDCG by comparing that score to the best possible
+ranking for the query.
+
+We evaluate results at two different cutoffs:
+    nDCG@100 - Looks at the top 100 retrieved documents.
+    nDCG@5   - Looks at the top 5 retrieved documents.
+
+Our file also includes functions for loading qrels and run files,
+keeping retrieved documents in their ranked order, and averaging
+the evaluation scores across all queries.
+
+We use these scores to compare how well BM25 and TF-IDF perform
+on our paper and paragraph collections.
+"""
+
 import math
 
 def dcg(relevance_scores):
