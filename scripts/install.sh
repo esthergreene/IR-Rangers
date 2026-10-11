@@ -14,8 +14,9 @@ set -euo pipefail
 
 ENV_NAME="ir-rangers"
 PYTHON_VERSION="3.8"
-MIN_NODE_MAJOR=20                       # Vite 8 needs a recent Node.js
+MIN_NODE_MAJOR=22                       # Vite 8 needs a recent Node.js
 CONDA_INSTALL_DIR="$HOME/miniforge3"    # used only if no conda is found
+FRONTEND_DIR="interface/frontend"
 SHARED_DATA="/mnt/netstore1_datasets/IR26"
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -59,7 +60,7 @@ install_conda() {
 node_is_recent() {
     have node && have npm || return 1
     local major
-    major="$(node --version | sed 's/^v//' | cute -d. -f1)"
+    major="$(node --version | sed 's/^v//' | cut -d. -f1)"
     [ "$major" -ge "MIN_NODE_MAJOR" ]
 }
 
@@ -97,7 +98,7 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 
 echo "=== Checking NLTK stopwords ==="
-if python -c "import nltk; nltk.data.find('corpora/stopwords')" >/dev/null 2>&1; then
+if     python -c "import nltk; nltk.download('stopwords', quiet=True)" >/dev/null 2>&1; then
     echo "NLTK stopwords already downloaded."
 else
     python -m nltk.downloader -q stopwords
@@ -109,8 +110,8 @@ if node_is_recent; then
     echo "Node.js $(node --version) already installed."
 else
     # Installed into the conda environment, so the system Node.js is untouched
-    echo "Node.js $MIN_MODE_MAJOR+ not found. Installing it into '$ENV_NAME'..."
-    conda install -y -n "$ENV_NAME" -c conda-forge --override-channels "nodejs>=$MIN_MODE_MAJOR"
+    echo "Node.js $MIN_NODE_MAJOR+ not found. Installing it into '$ENV_NAME'..."
+    conda install -y -n "$ENV_NAME" -c conda-forge --override-channels "nodejs>=$MIN_NODE_MAJOR"
     hash -r # make the shell look up "node" again
 fi
 
