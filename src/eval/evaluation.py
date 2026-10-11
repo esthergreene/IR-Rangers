@@ -16,17 +16,32 @@ RAW_DIR = REPO_ROOT / "data" / "raw"
 RUNS_DIR = REPO_ROOT / "runs"
 
 
+def load_strict_qrels(path):
+    """
+    Load QRELs with only fully relevant (grade 2) judgments.
+
+    Queries with no grade-2 document are omitted, so strict metrics are
+    averaged only over queries that have something to find.
+    """
+    strict = {}
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            query_id, _, doc_id, relevance = line.split()
+            if int(relevance) == 2:
+                strict.setdefault(query_id, {})[doc_id] = 2
+    return Qrels(strict)
+
+
 def evaluate_graded(qrels, run):
     """Evaluates metrics using graded relevance (includes levels 1 and 2)."""
     # Note: Do not call set_relevance_level here so it uses all graded levels (0/1/2)
-    metrics = ["mrr", "precision@5", "ndcg@10"]
+    metrics = ["ndcg", "ndcg@5", "mrr", "precision@5", "precision@10"]
     return evaluate(qrels, run, metrics, make_comparable=True)
 
 
 def evaluate_strict(qrels_strict, run):
     """Evaluates metrics using strict relevance (level 2 only)."""
-    qrels_strict.set_relevance_level(rel_lvl=2)
-    metrics = ["ndcg", "ndcg@5", "precision@5", "precision@10"]
+    metrics = ["precision@5", "mrr"]
     return evaluate(qrels_strict, run, metrics, make_comparable=True)
 
 
@@ -37,6 +52,7 @@ def run_significance_test(qrels, run_bm25, run_tfidf, metrics, title):
         qrels=qrels, 
         runs=[run_bm25, run_tfidf], 
         metrics=metrics, 
+        max_p = 0.05,
         stat_test="student"
     )
     print(report)
@@ -66,9 +82,9 @@ def main():
     qrels_paper_graded = Qrels.from_file(qrels_paper_path, kind="trec")
     qrels_paragraph_graded = Qrels.from_file(qrels_paragraph_path, kind="trec")
     
-    # Strict Qrels (will be filtered to level 2)
-    qrels_paper_strict = Qrels.from_file(qrels_paper_path, kind="trec")
-    qrels_paragraph_strict = Qrels.from_file(qrels_paragraph_path, kind="trec")
+    # Strict Qrels contain only grade-2 judgments and omit queries without them.
+    qrels_paper_strict = load_strict_qrels(qrels_paper_path)
+    qrels_paragraph_strict = load_strict_qrels(qrels_paragraph_path)
 
     # 2. Load the 4 runs ({paper, paragraph} x {bm25, tfidf})
     run_paper_bm25 = Run.from_file(RUNS_DIR / f"paper_bm25_{qset}.tsv", kind="trec")
