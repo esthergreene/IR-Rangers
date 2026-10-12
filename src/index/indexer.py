@@ -84,7 +84,23 @@ class CorpusIndex:
 
         return index
 
-def load_index(file_path):
+def load_index(file_path, force_reindex=False):
+    if force_reindex:
+        from pathlib import Path
+
+        index_path = Path(file_path)
+
+        collection_name = {
+            "paper_index.json": "papers.jsonl",
+            "paragraph_index.json": "paragraphs.jsonl"
+        }
+
+        collection_path = index_path.with_name(
+            collection_name[index_path.name]
+        )
+
+        return build_and_save_index(collection_path, index_path)
+
     with open(file_path, "r", encoding="utf-8") as file:
         data = json.load(file)
 
@@ -122,6 +138,13 @@ def build_index_from_jsonl(file_path):
 
     return index
 
+def build_and_save_index(collection_path, index_path):
+    """Build an index from a collection and then save it to eventually return it."""
+    index = build_index_from_jsonl(collection_path)
+    save_json(index.to_dict(), index_path)
+
+    return index
+
 if __name__ == "__main__":
     from pathlib import Path
 
@@ -130,28 +153,24 @@ if __name__ == "__main__":
 
     # Build the paper index from the preprocessed collection.
     print("Building paper index...")
-    paper_index = build_index_from_jsonl(processed_dir / "papers.jsonl")
+    paper_index = build_and_save_index(
+        processed_dir / "papers.jsonl",
+        processed_dir / "paper_index.json"
+    )
 
     print("Papers indexed:", paper_index.num_docs)
     print("Unique terms in paper index:", len(paper_index.vocabulary()))
     print("Average paper length:", paper_index.avg_doc_length)
 
-    save_json(
-        paper_index.to_dict(),
-        processed_dir / "paper_index.json"
-    )
-
     del paper_index
 
     # Build the paragraph index from the preprocessed collection.
     print("Building paragraph index...")
-    paragraph_index = build_index_from_jsonl(processed_dir / "paragraphs.jsonl")
+    paragraph_index = build_and_save_index(
+        processed_dir / "paragraphs.jsonl",
+        processed_dir / "paragraph_index.json"
+    )
 
     print("Paragraphs indexed:", paragraph_index.num_docs)
     print("Unique terms in paragraph index:", len(paragraph_index.vocabulary()))
     print("Average paragraph length:", paragraph_index.avg_doc_length)
-
-    save_json(
-        paragraph_index.to_dict(),
-        processed_dir / "paragraph_index.json"
-    )
