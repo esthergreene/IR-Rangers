@@ -3,16 +3,21 @@ Evaluation script for retrieval outputs.
 Takes TREC-formatted run files (qid, Q0, docid, rank, score, runid) 
 found in runs/ and evaluates them against qrels using ranx.
 Supports graded and strict metrics, as well as statistical significance testing.
+
+Run from the repository root:
+    python src/eval/evaluation.py --queries train
 """
 
 from ranx import Qrels, Run, evaluate, compare
 import argparse
 import sys
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
 from src.common.trec import run_filename
 
-# Repository root setup to avoid absolute filesystem root bugs
-REPO_ROOT = Path(__file__).resolve().parents[2]
 RAW_DIR = REPO_ROOT / "data" / "raw"
 RUNS_DIR = REPO_ROOT / "runs"
 
