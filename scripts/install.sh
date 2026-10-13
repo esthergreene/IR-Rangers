@@ -61,7 +61,7 @@ node_is_recent() {
     have node && have npm || return 1
     local major
     major="$(node --version | sed 's/^v//' | cut -d. -f1)"
-    [ "$major" -ge "MIN_NODE_MAJOR" ]
+    [ "$major" -ge "$MIN_NODE_MAJOR" ]
 }
 
 # Conda's activation scripts reference unset variables, so pause "set -u" around them.
@@ -111,7 +111,7 @@ if node_is_recent; then
 else
     # Installed into the conda environment, so the system Node.js is untouched
     echo "Node.js $MIN_NODE_MAJOR+ not found. Installing it into '$ENV_NAME'..."
-    conda install -y -n "$ENV_NAME" -c conda-forge --override-channels "nodejs>=$MIN_NODE_MAJOR"
+    conda install -y -n "$ENV_NAME" -c conda-forge --override-channels "nodejs=22"
     hash -r # make the shell look up "node" again
 fi
 
