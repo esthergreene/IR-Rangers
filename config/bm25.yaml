@@ -1,0 +1,7 @@
+# Tuned on Train queries with scripts/tune_bm25.py (see results/bm25_tuning_*_full.csv).
+paper:
+  k1: 4.0
+  b: 0.75
+paragraph:
+  k1: 0.4
+  b: 0.9

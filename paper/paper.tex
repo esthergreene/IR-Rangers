@@ -104,27 +104,7 @@ paragraphs (0.06\%) contain an unpaired dollar sign. They keep their math
 spans, although \LaTeX{} command removal and the token filters still
 remove most of the resulting tokens.
 
-Table~\ref{tab:cleaning} compares three settings. \emph{Baseline}
-applies only lowercasing, tokenization on letters, digits, and
-underscores, and stopword removal (with ``not'' and ``no'' retained).
-\emph{Cleaned} applies steps 1--5 and no longer retains ``not'' and
-``no'': bag-of-words models cannot use them to express negation, and
-``not'' alone accounted for over 500,000 tokens. \emph{+ Snowball} is the final
-pipeline. Cleaning reduced the collection from 168.0 million to 114.9
-million tokens, a 31.6\% decrease, and all of the 50 most frequent tokens
-became words, such as ``model'', ``data'', and ``using''. It also reduced
-the number of paragraphs longer than 1,000 tokens from 868 to 117; the
-longest Baseline paragraphs were collaboration author lists made up
-largely of \LaTeX{} markup and ORCID identifiers. Stemming leaves the
-number of tokens unchanged but shrinks the vocabulary by a further
-10.7\%, from 659,861 to 589,251 terms. The cost is that some distinct
-words share a stem: ``different'' and ``difference'' both become
-``differ'', and ``generate'', ``generation'', and ``generative'' all
-become ``generat''. Finally, cleaning removes every token from 8,389
-paragraphs, which consisted mostly of mathematical notation; we describe
-how these are handled in Section~\ref{sec:docrep}.
-
-\begin{table}[t]
+\begin{table}[h]
   \caption{Paragraph collection statistics under three preprocessing
     settings, defined in Section~\ref{sec:preprocessing}.}
   \label{tab:cleaning}
@@ -145,6 +125,26 @@ how these are handled in Section~\ref{sec:docrep}.
     \bottomrule
   \end{tabular}
 \end{table}
+Table~\ref{tab:cleaning} compares three settings. \emph{Baseline}
+applies only lowercasing, tokenization on letters, digits, and
+underscores, and stopword removal (with ``not'' and ``no'' retained).
+\emph{Cleaned} applies steps 1--5 and no longer retains ``not'' and
+``no'': bag-of-words models cannot use them to express negation, and
+``not'' alone accounted for over 500,000 tokens. \emph{+ Snowball} is the final
+pipeline. Cleaning reduced the collection from 168.0 million to 114.9
+million tokens, a 31.6\% decrease, and all of the 50 most frequent tokens
+became words, such as ``model'', ``data'', and ``using''. It also reduced
+the number of paragraphs longer than 1,000 tokens from 868 to 117; the
+longest Baseline paragraphs were collaboration author lists made up
+largely of \LaTeX{} markup and ORCID identifiers. Stemming leaves the
+number of tokens unchanged but shrinks the vocabulary by a further
+10.7\%, from 659,861 to 589,251 terms. The cost is that some distinct
+words share a stem: ``different'' and ``difference'' both become
+``differ'', and ``generate'', ``generation'', and ``generative'' all
+become ``generat''. Finally, cleaning removes every token from 8,389
+paragraphs, which consisted mostly of mathematical notation; we describe
+how these are handled in Section~\ref{sec:docrep}.
+
 \subsection{Document Representation}
 \label{sec:docrep}
 \subsection{Search Interface}

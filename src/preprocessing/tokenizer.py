@@ -41,11 +41,14 @@ CITATION = re.compile(r"\[\s*\d+(?:\s*[,–-]\s*\d+)*\s*\]")      # [1], [5, 6, 
 # Letters and digits only, so underscores split tokens (x_i -> x, i).
 TOKEN_PATTERN = re.compile(r"[^\W_]+")
 
+# Letters, digits, and underscores; used by the baseline configuration only.
+WORD_PATTERN = re.compile(r"\w+")
+
 STOPWORD_SOURCES = {"nltk", "custom", "none"}
 STEMMERS = {"none", "porter", "snowball"}
 
 CLEANING_KEYS = {"remove_math", "remove_urls", "remove_citations"}
-TOKENIZER_KEYS = {"lowercase", "min_token_length", "drop_numeric", "stopwords", "stemming"}
+TOKENIZER_KEYS = {"lowercase", "split_underscores", "min_token_length", "drop_numeric", "stopwords", "stemming"}
 
 
 def load_config(config_path=DEFAULT_CONFIG_PATH):
@@ -216,6 +219,10 @@ class Tokenizer:
                 f"min_token_length is {self.min_token_length!r}; expected a whole number of 1 or more."
             )
 
+        self.token_pattern = (
+            TOKEN_PATTERN if tokenizer_config.get("split_underscores", True) else WORD_PATTERN
+        )
+
         self.drop_numeric = tokenizer_config.get("drop_numeric", False)
 
         self.stemming = tokenizer_config.get("stemming", "none")
@@ -245,7 +252,7 @@ class Tokenizer:
         # stopwords such as "The" are not removed.
 
         tokens = [
-            token for token in TOKEN_PATTERN.findall(text)
+            token for token in self.token_pattern.findall(text)
             if len(token) >= self.min_token_length
             and not (self.drop_numeric and token.isdigit())
             and token not in self.stopwords
