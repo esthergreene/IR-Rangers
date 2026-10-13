@@ -37,27 +37,39 @@
 \maketitle
 
 \section{Introduction}
+The volume of scientific literature makes finding relevant work
+increasingly difficult, both at the level of whole papers and of the
+specific passages that answer a question. This paper describes the first
+phase of our retrieval system for arXiv papers, which applies two
+traditional term-matching models, TF-IDF and BM25, to retrieving both
+papers and individual paragraphs. We describe our preprocessing of a
+noisy collection, tune BM25 per task, evaluate both models with
+significance testing, and analyze where term matching succeeds and where
+it fails, particularly on hard queries that paraphrase technical
+terminology. As we will detail, our findings show that BM25 
+significantly outperforms TF-IDF on both tasks.
+
 The test collection consists of 34,308 arXiv papers published in August
 and September 2024. Each paper is provided both as raw HTML scraped from
-the arXiv website and as a processed JSON file containing its identifier,
+the ar5iv website and as a processed JSON file containing its identifier,
 title, abstract, and paragraphs. Because the JSON files were produced with
 rule-based extraction, they contain noise such as leftover \LaTeX{} markup
 and merged words, which we discuss in Section~\ref{sec:preprocessing}.
-In total, the collection contains 2,275,574 paragraphs from across 34,308 papers, 
-or about 66 paragraphs per paper.
+In total, the collection contains 2,275,574 paragraphs, or about 66 paragraphs 
+per paper.
 
 We address two tasks over this collection: \emph{paper retrieval}, which
 returns papers identified by their arXiv ID (in YYMM.NNNNN format), and
 \emph{paragraph retrieval}, which returns individual paragraphs. For each
 query, systems return their top 100 results. Three query sets are
-provided: Train (2,000 queries), Study (200 queries with relevance
-judgments, which we use for all analysis in this paper), and Test (200
+provided: Train (2,000 queries), Study (250 queries with relevance
+judgments, which we use for all analysis in this paper), and Test (250
 queries whose judgments are withheld). Each set contains 30\% easy, 50\%
 medium, and 20\% hard queries. Relevance is graded on a three-point
 scale: a document that fully addresses the query is relevant (2), one that
 provides useful information without fully addressing it is partially
-relevant (1), and any document not in the judgments that provides no useful
-information is considered non-relevant.
+relevant (1), and any document not in the judgments is considered
+non-relevant.
 
 \section{Methodology}
 \label{sec:method}
@@ -121,8 +133,8 @@ math delimiter and the text between them deleted, so math spans are only
 removed from paragraphs with an even number of dollar signs. Only 1,458
 paragraphs (0.06\%) contain an unpaired dollar sign. They keep their math
 spans, although \LaTeX{} command removal and the token filters still
-remove most of the resulting tokens. We evaluate the effect of this choice 
-on retrieval in Section~\ref{sec:analysis}.
+remove most of the resulting tokens. We evaluate the effects of our choice
+to employ inline math removal and stemming on retrieval in Section~\ref{sec:analysis}.
 
 Some extraction noise is not addressed by preprocessing. Adjacent words
 are occasionally merged (e.g., ``andenthusiasts'', ``inmedical''), and
@@ -169,9 +181,15 @@ number of tokens unchanged but shrinks the vocabulary by a further
 10.7\%, from 659,861 to 589,251 terms. The cost is that some distinct
 words share a stem: ``different'' and ``difference'' both become
 ``differ'', and ``generate'', ``generation'', and ``generative'' all
-become ``generat''. Finally, cleaning removes every token from 8,389
-paragraphs, which consisted mostly of mathematical notation; we describe
-how these are handled in Section~\ref{sec:docrep}.
+become ``generat''. Table~\ref{tab:cleaning} also shows that the number
+of paragraphs under 10 tokens nearly triples (82,390 $\rightarrow$ 230,782). 
+This is because the cleaning process employed in the latter two pipelines
+strips math out of math-heavy paragraphs and leaves only their prose, causing
+many to become short fragments. Finally, cleaning removes every token from 8,389 
+paragraphs. Of these, 94\% contain inline math or \LaTeX{} commands: 
+they are standalone formulas, sometimes with a few connecting words 
+(``if'', ``then'', ``where'') that are themselves stopwords. We describe 
+how these paragraphs are handled in Section~\ref{sec:docrep}.
 
 \subsection{Document Representation}
 \label{sec:docrep}
@@ -179,6 +197,26 @@ how these are handled in Section~\ref{sec:docrep}.
 \label{sec:tfidf}
 \subsection{BM25}
 \label{sec:bm25}
+BM25 addresses two weaknesses of the TF-IDF weighting in
+Section~\ref{sec:tfidf}: it saturates the contribution of repeated terms,
+and it normalizes document length relative to the collection average
+rather than by vector length. We describe the scoring function we use,
+our implementation, and how we tuned its two parameters, $k_1$ and $b$,
+for each collection.
+\subsubsection{Scoring Function}
+
+\begin{equation}
+  \mathrm{score}(q,d) = \sum_{t \in q} \mathit{idf}_t \cdot
+    \frac{\mathit{tf}_{t,d}\,(k_1 + 1)}
+         {\mathit{tf}_{t,d} + k_1 \bigl(1 - b + b\,L_d / L_{\mathit{avg}}\bigr)}
+  \label{eq:bm25}
+\end{equation}
+\begin{equation}
+  \mathit{idf}_t = \ln\!\left(1 + \frac{N - \mathit{df}_t + 0.5}{\mathit{df}_t + 0.5}\right)
+  \label{eq:idf}
+\end{equation}
+
+\subsubsection{Implementation}
 \subsubsection{Parameter Tuning}
 % \begin{figure}[h]
 %   \includegraphics[width=\columnwidth]{figures/bm25_tuning_paper_full.pdf}
@@ -199,10 +237,11 @@ how these are handled in Section~\ref{sec:docrep}.
 %   \label{fig:tuning-paragraph}
 % \end{figure}
 
-\subsection{Search Interface}
-\label{sec:interface}
 \subsection{Evaluation Setup}
 \label{sec:eval}
+
+\subsection{Search Interface}
+\label{sec:interface}
 
 \section{Evaluation Results}
 \subsection{Metrics}
@@ -212,38 +251,50 @@ how these are handled in Section~\ref{sec:docrep}.
 \label{sec:analysis}
 
 \begin{table}[h]
-  \caption{Effect of keeping inline math on Study nDCG@5 (BM25 parameters
-    tuned for the math-removed configuration). $^{*}$ marks a significant
-    difference (paired t-test, $p < 0.05$).}
-  \label{tab:keepmath}
+  \caption{Preprocessing ablation on Study queries, nDCG@5, with BM25
+    parameters fixed to the values tuned for the main configuration
+    (math removed, Snowball stemming). Comparing the first two columns
+    isolates math removal; comparing the last two isolates stemming.
+    $^{*}$ marks a significant difference from the column to its left
+    (paired t-test, $p < 0.05$).}
+  \label{tab:ablation}
   \small
-  \begin{tabular}{lrr}
+  \begin{tabular}{lrrr}
     \toprule
-    & Math removed & Math kept \\
+    & Main & Math kept & Math kept, \\
+    &      &           & no stemming \\
     \midrule
-    Papers, TF-IDF     & 0.313 & 0.379$^{*}$ \\
-    Papers, BM25       & 0.514 & 0.542 \\
-    Paragraphs, TF-IDF & 0.229 & 0.235 \\
-    Paragraphs, BM25   & 0.416$^{*}$ & 0.378 \\
+    Papers, TF-IDF     & 0.313 & 0.320 & 0.379$^{*}$ \\
+    Papers, BM25       & 0.514 & 0.534$^{*}$ & 0.542 \\
+    Paragraphs, TF-IDF & 0.229 & 0.238 & 0.235 \\
+    Paragraphs, BM25   & 0.416 & 0.416 & 0.378$^{*}$ \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-As an ablation, we reran the pipeline without inline-math removal
-(Table~\ref{tab:keepmath}). Keeping math significantly improved TF-IDF on
-papers across all metrics, but changed BM25 on papers only modestly
-(significant only for P@5), and significantly reduced BM25 on paragraphs
-(all graded metrics and strict MRR). Spelled-out notation in queries
-(e.g., ``epsilon'', ``kappa'') can match LaTeX tokens when math is kept,
-which helps when aggregated over whole papers; in paragraphs, the
-previously empty, math-only fragments become retrievable and compete with
-prose. Math removal therefore suits our strongest paragraph system and is
-close to neutral for our strongest paper system. As such, we elected to keep
-math removal in the final preprocessing pipeline to optimize the metrics of 
-our best performing model: BM25. Choosing preprocessing per collection, 
-validated on Train queries with retuned BM25 parameters, would be a suitable 
-direction for future work.
+We isolated two preprocessing choices on Study queries
+(Table~\ref{tab:ablation}). Removing inline math, which reduced the
+collection by 31.6\%, had little effect on retrieval. It made no
+significant difference for either model on paragraphs or for TF-IDF on
+papers, and slightly reduced paper BM25 (nDCG@5 0.534 to 0.514,
+significant only for nDCG@5 and strict P@5). Papers contain enough
+spelled-out notation, such as ``epsilon'' or ``kappa'', for kept math
+tokens to provide a few additional correct matches. Math removal is a 
+reasonable tradeoff for a 31.6\% reduction in collection size.
 
+Stemming mattered more, in opposite directions for our two strongest
+effects. It significantly improved paragraph BM25 on every metric
+(nDCG@5 0.378 to 0.416, MRR 0.457 to 0.509), but significantly reduced
+paper TF-IDF on every metric (nDCG@5 0.379 to 0.320); it had no
+significant effect on paper BM25 or paragraph TF-IDF. A plausible
+explanation is that short paragraphs gain from the additional matches
+stemming creates, while for long papers under cosine normalization,
+conflated stems (e.g., ``generat'' for ``generate'', ``generation'', and
+``generative'') make common stems even more frequent and dilute term
+weights. Regardless, it is important to note that even TF-IDF's best 
+configuration (no stemming, 0.379 nDCG@5) stays far below BM25 (0.542).
+This implies that the reasons for BM25's better performance over TF-IDF
+do not necessarily originate from the preprocessing pipeline.
 \section{Conclusion}
 
 \bibliographystyle{ACM-Reference-Format}
