@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query
+from src.common.bm25_config import load_bm25_params
 from src.index.indexer import load_index
 from src.model.bm25 import BM25Model
 from src.model.tfidf import TFIDFModel
@@ -36,7 +37,9 @@ tokenizer = Tokenizer(config_path=CONFIG_PATH)
 # Exsiting paper index
 paper_index = load_index(INDEX_PATH)
 collection_indexes = {"paper": paper_index}
-search_models = {("bm25", "paper"): BM25Model(paper_index, k1=0.9, b=0.4)}
+search_models = {
+    ("bm25", "paper"): BM25Model(paper_index, *load_bm25_params("paper"))
+}
 paragraph_offsets = None
 
 # Here we're storing paper information by doc ID. The goal here is to make it a quicker lookup.
@@ -66,7 +69,7 @@ def get_search_model(model, collection):
     if key not in search_models:
         index = get_collection_index(collection)
         search_models[key] = (
-            BM25Model(index, k1=0.9, b=0.4)
+            BM25Model(index, *load_bm25_params(collection))
             if model == "bm25"
             else TFIDFModel(index)
         )
@@ -150,7 +153,24 @@ def search(
             })
 
     return {"query": q, "results": results, "total": len(ranked)}
-    
+
+@app.get("/api/vocabulary")
+def vocabulary(q: str):
+    tokens = tokenizer.tokenize(q)
+    unique_tokens = list(dict.fromkeys(tokens))
+
+    return [
+        {
+            "id": "query",
+            "label": "Search terms",
+            "color": "yellow",
+            "terms": [
+                {"term": token, "on": True}
+                for token in unique_tokens
+            ],
+        }
+    ]
+
 @app.get("/api/suggest")
 def suggest(q: str):
     # Find paper titles
