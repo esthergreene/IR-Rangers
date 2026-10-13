@@ -18,6 +18,9 @@ export interface SearchResponse {
   total: number
 }
 
+export type SearchModel = 'bm25' | 'tfidf'
+export type SearchCollection = 'paper' | 'paragraph'
+
 export interface VocabularyTerm {
   term: string
   /** Whether the term is turned on by default. */
@@ -42,6 +45,8 @@ export interface SearchApi {
     terms: string[],
     page: number,
     pageSize: number,
+    model: SearchModel,
+    collection: SearchCollection,
   ): Promise<SearchResponse>
   vocabulary(query: string): Promise<VocabularyGroup[]>
   suggest(text: string): Promise<string[]>

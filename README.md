@@ -88,6 +88,6 @@ Open `http://127.0.0.1:5173` in your browser. If using VS Code Remote SSH, forwa
 
 ### 5. Search the collection
 
-Turn **Sample data** off in the frontend menu to use the real BM25 search backend.
+Turn **Sample data** off in the frontend menu or Settings page to search the real collection. Settings can also switch between BM25 and TF-IDF ranking and between paper and paragraph search.
 
 Search results are shown 10 ranked research papers at a time, with page controls to browse additional matches.

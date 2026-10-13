@@ -115,3 +115,21 @@ class TFIDFModel:
             (self.index.doc_id(doc_number), score)
             for doc_number, score in top
         ]
+
+    def search_page(self, query_tokens, page=1, page_size=10):
+        """Return one ranked result page and the total number of scored documents."""
+        if page < 1:
+            raise ValueError("page must be at least 1")
+        if page_size < 1:
+            raise ValueError("page_size must be at least 1")
+
+        offset = (page - 1) * page_size
+        results = self.search(query_tokens, k=offset + page_size)[offset:]
+
+        matching_docs = set()
+        for term in set(query_tokens):
+            if self.idf.get(term, 0) > 0:
+                doc_numbers, _ = self.index.postings(term)
+                matching_docs.update(doc_numbers)
+
+        return results, len(matching_docs)

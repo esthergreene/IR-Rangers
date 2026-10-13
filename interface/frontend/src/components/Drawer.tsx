@@ -1,21 +1,22 @@
 import { useEffect, useId, useRef, type RefObject } from 'react'
 import { CloseIcon } from './icons'
 
-const NAV_ITEMS = ['Search', 'Saved searches', 'Collections', 'Search history', 'Vocabulary browser', 'Settings']
-const CURRENT = 'Search'
+const NAV_ITEMS = ['Search', 'Collections', 'Search history', 'Settings'] as const
+export type DrawerPage = (typeof NAV_ITEMS)[number]
 
 interface DrawerProps {
   id: string
   open: boolean
+  currentPage: DrawerPage
   /** Receives focus when the drawer closes. */
   returnFocusRef: RefObject<HTMLElement | null>
   sampleData: boolean
   onSampleDataChange(enabled: boolean): void
-  onNavigate(label: string): void
+  onNavigate(label: DrawerPage): void
   onClose(): void
 }
 
-export function Drawer({ id, open, returnFocusRef, sampleData, onSampleDataChange, onNavigate, onClose }: DrawerProps) {
+export function Drawer({ id, open, currentPage, returnFocusRef, sampleData, onSampleDataChange, onNavigate, onClose }: DrawerProps) {
   const closeRef = useRef<HTMLButtonElement>(null)
   const wasOpen = useRef(open)
 
@@ -60,12 +61,12 @@ export function Drawer({ id, open, returnFocusRef, sampleData, onSampleDataChang
             <a
               key={label}
               href="#"
-              aria-current={label === CURRENT ? 'page' : undefined}
+              aria-current={label === currentPage ? 'page' : undefined}
               className="block rounded-md px-3 py-[11px] text-[15px] text-ink-2 hover:bg-hover-paper hover:text-ink aria-[current=page]:bg-row-active aria-[current=page]:font-semibold aria-[current=page]:text-ink"
               onClick={(e) => {
                 e.preventDefault()
                 onClose()
-                if (label !== CURRENT) onNavigate(label)
+                if (label !== currentPage) onNavigate(label)
               }}
             >
               {label}

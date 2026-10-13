@@ -86,7 +86,6 @@ interface VocabPanelProps {
   onToggle(key: string): void;
   onAddKeyword(label: string): void;
   onRemoveKeyword(key: string): void;
-  onReset(): void;
   onClear(): void;
   onDone(): void;
 }
@@ -101,7 +100,6 @@ export function VocabPanel({
   onToggle,
   onAddKeyword,
   onRemoveKeyword,
-  onReset,
   onClear,
   onDone,
 }: VocabPanelProps) {
@@ -216,7 +214,6 @@ export function VocabPanel({
           results.
         </p>
         <div className="ml-auto flex items-center gap-3">
-          <TextButton onClick={onReset}>Reset to suggested</TextButton>
           <TextButton onClick={onClear}>Clear all selections</TextButton>
           <Button onClick={onDone}>Done</Button>
         </div>

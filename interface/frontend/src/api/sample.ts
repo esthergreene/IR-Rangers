@@ -1,5 +1,5 @@
 import { normalize } from '../lib/text'
-import type { SearchApi, SearchResult, VocabularyGroup } from './types'
+import type { SearchApi, SearchCollection, SearchModel, SearchResult, VocabularyGroup } from './types'
 
 /*
  * Synthesized data carried over from the search prototype. Every query returns
@@ -82,7 +82,7 @@ const SAMPLE_SUGGESTIONS = [
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export const sampleApi: SearchApi = {
-  async search(query, _terms, page, pageSize) {
+  async search(query, _terms, page, pageSize, _model: SearchModel, _collection: SearchCollection) {
     await wait(450)
     const start = (page - 1) * pageSize
     return {
