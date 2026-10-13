@@ -90,4 +90,4 @@ Open `http://127.0.0.1:5173` in your browser. If using VS Code Remote SSH, forwa
 
 Turn **Sample data** off in the frontend menu to use the real BM25 search backend.
 
-The search engine currently returns up to 10 ranked research papers per query.
+Search results are shown 10 ranked research papers at a time, with page controls to browse additional matches.

@@ -82,9 +82,14 @@ const SAMPLE_SUGGESTIONS = [
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export const sampleApi: SearchApi = {
-  async search(query) {
+  async search(query, _terms, page, pageSize) {
     await wait(450)
-    return { query, results: SAMPLE_RESULTS }
+    const start = (page - 1) * pageSize
+    return {
+      query,
+      results: SAMPLE_RESULTS.slice(start, start + pageSize),
+      total: SAMPLE_RESULTS.length,
+    }
   },
 
   async vocabulary() {

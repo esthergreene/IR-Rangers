@@ -24,27 +24,31 @@ const cssVars = (vars: Record<`--${string}`, string>) => vars as CSSProperties
 interface ResultsHeadProps {
   search: SearchState
   shown: number
+  pageTotal: number
   total: number
   sampleData: boolean
   onClearFilters(): void
 }
 
-export function ResultsHead({ search, shown, total, sampleData, onClearFilters }: ResultsHeadProps) {
+export function ResultsHead({ search, shown, pageTotal, total, sampleData, onClearFilters }: ResultsHeadProps) {
   let content: ReactNode = null
   if (search.status === 'loading') {
     content = <p className="text-[15px] text-graphite">Searching…</p>
   } else if (search.status === 'done') {
-    const filtered = shown !== total
+    const filtered = shown !== pageTotal
     const noun = total === 1 ? 'result' : 'results'
     content = (
       <>
         <p className="text-[15px] text-graphite">
-          <strong className="font-semibold text-ink">{filtered ? `${shown} of ${total} ${noun}` : `${total} ${noun}`}</strong>
+          <strong className="font-semibold text-ink">{total} {noun}</strong>
           {` for “${search.query}”`}
           {filtered && (
-            <TextButton className="ml-1.5" onClick={onClearFilters}>
-              Clear filters
-            </TextButton>
+            <>
+              <span className="ml-1.5">{`(${shown} shown on this page)`}</span>
+              <TextButton className="ml-1.5" onClick={onClearFilters}>
+                Clear filters
+              </TextButton>
+            </>
           )}
         </p>
         {sampleData && (

@@ -2,11 +2,10 @@ import { normalize } from '../lib/text'
 import type { SearchApi, SearchResponse, VocabularyGroup } from './types'
 
 /*
- * Client for the real search backend, which doesn't exist yet. Until it does,
- * every request fails and the UI shows its "Search didn't respond" state.
+ * Client for the real search backend.
  *
  * Expected endpoints (JSON responses, shapes in ./types.ts):
- *   GET {base}/search?q=<query>&term=<term>&term=<term>  → SearchResponse
+ *   GET {base}/search?q=<query>&page=<n>&page_size=<n>   → SearchResponse
  *   GET {base}/vocabulary?q=<query>                      → VocabularyGroup[]
  *   GET {base}/suggest?q=<partial query>                 → string[]
  *
@@ -24,8 +23,12 @@ async function getJson<T>(path: string, params: URLSearchParams): Promise<T> {
 }
 
 export const backendApi: SearchApi = {
-  search(query, terms) {
-    const params = new URLSearchParams({ q: query })
+  search(query, terms, page, pageSize) {
+    const params = new URLSearchParams({
+      q: query,
+      page: String(page),
+      page_size: String(pageSize),
+    })
     for (const term of terms) params.append('term', term)
     return getJson<SearchResponse>('/search', params)
   },

@@ -6,7 +6,7 @@ our existing retrieval models to search through papers and
 paragraphs and return the results as JSON.
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 import json
 from pathlib import Path
 from src.index.indexer import load_index
@@ -46,9 +46,9 @@ def health():
     return {"status": "ok"}
 
 @app.get("/api/search")
-def search(q: str):
+def search(q: str, page: int = Query(1, ge=1), page_size: int = Query(10, ge=1, le=100)):
     tokens = tokenizer.tokenize(q)
-    matches = bm25_model.search(tokens, k=10)
+    matches, total = bm25_model.search_page(tokens, page=page, page_size=page_size)
     results = []
 
     for doc_id, score in matches:
@@ -68,7 +68,8 @@ def search(q: str):
 
     return {
         "query": q,
-        "results": results
+        "results": results,
+        "total": total,
     }
 
 @app.get("/api/vocabulary")
@@ -90,6 +91,27 @@ def vocabulary(q: str):
 
 @app.get("/api/suggest")
 def suggest(q: str):
+    # Find paper titles
+    query = q.strip().lower()
+
+    if not query:
+        return []
+
+    suggestions = []
+
+    for paper in paper_metadata.values():
+        title = paper["title"]
+
+        if title and title.lower().startswith(query):
+            suggestions.append(title)
+
+        if len(suggestions) == 5:
+            break
+
+    return suggestions
+
+@app.get("/api/settings")
+def settings(q: str):
     # Find paper titles
     query = q.strip().lower()
 

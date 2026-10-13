@@ -124,6 +124,36 @@ class BM25Model:
             (self.corpus_index.doc_id(int(doc_number)), float(score))
             for doc_number, score in zip(candidates[order], candidate_scores[order])
         ]
+
+    def search_page(self, query_tokens, page=1, page_size=10):
+        """
+        Return one ranked result page and the total number of matching documents.
+
+        Args:
+            query_tokens (list of str): Query, already tokenized.
+            page (int): One-based page number.
+            page_size (int): Maximum number of results in a page.
+
+        Returns:
+            tuple: (results, total), where results is a list of (doc_id, score)
+                pairs and total is the number of documents matching any query term.
+        """
+        if page < 1:
+            raise ValueError("page must be at least 1")
+        if page_size < 1:
+            raise ValueError("page_size must be at least 1")
+
+        offset = (page - 1) * page_size
+        end = offset + page_size
+        results = self.search(query_tokens, k=end)[offset:]
+
+        matching_docs = set()
+        for term in set(query_tokens):
+            if term in self.idf:
+                doc_numbers, _ = self._postings_array(term)
+                matching_docs.update(doc_numbers)
+
+        return results, len(matching_docs)
     
     def score(self, query_tokens, doc_id):
         """

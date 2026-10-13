@@ -15,6 +15,7 @@ export interface SearchResult {
 export interface SearchResponse {
   query: string
   results: SearchResult[]
+  total: number
 }
 
 export interface VocabularyTerm {
@@ -36,7 +37,12 @@ export interface VocabularyGroup {
  */
 export interface SearchApi {
   /** `terms` are the related terms and keywords that are switched on. */
-  search(query: string, terms: string[]): Promise<SearchResponse>
+  search(
+    query: string,
+    terms: string[],
+    page: number,
+    pageSize: number,
+  ): Promise<SearchResponse>
   vocabulary(query: string): Promise<VocabularyGroup[]>
   suggest(text: string): Promise<string[]>
 }

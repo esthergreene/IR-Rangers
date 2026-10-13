@@ -4,6 +4,7 @@ import { SAMPLE_QUERY, getSearchApi, type SearchResult } from "./api";
 import { Drawer } from "./components/Drawer";
 import { FilterButton, FilterPanel } from "./components/Filters";
 import { MenuIcon } from "./components/icons";
+import { Button } from "./components/buttons";
 import {
   ResultList,
   ResultsHead,
@@ -30,6 +31,8 @@ const ROW =
   "grid grid-cols-[var(--gutter)_minmax(0,1fr)_var(--gutter)] items-start gap-x-(--gap)";
 
 const NO_RESULTS: SearchResult[] = [];
+const PAGE_SIZE = 10;
+const PAGE_BUTTON_COUNT = 5;
 
 type Panel = "vocab" | "filters" | null;
 
@@ -43,6 +46,8 @@ export default function App() {
       ? { status: "loading", query: SAMPLE_QUERY }
       : { status: "idle" },
   );
+  const [currentPage, setCurrentPage] = useState(1);
+  const [resultTotal, setResultTotal] = useState(0);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [panel, setPanel] = useState<Panel>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -70,28 +75,38 @@ export default function App() {
     if (!q) {
       searchSeq.current++;
       setSearch({ status: "idle" });
+      setCurrentPage(1);
+      setResultTotal(0);
       inputRef.current?.focus();
       return;
     }
+    setCurrentPage(1);
+    setResultTotal(0);
     setSearch({ status: "loading", query: q });
-    loadResults(q, useSampleData);
+    loadResults(q, useSampleData, 1);
   }
 
   /** Fetches results and related vocabulary for `q`. Only the newest request gets to update state. */
-  async function loadResults(q: string, useSampleData: boolean) {
+  async function loadResults(
+    q: string,
+    useSampleData: boolean,
+    page: number,
+    refreshVocabulary = true,
+  ) {
     const seq = ++searchSeq.current;
     const source = getSearchApi(useSampleData);
     try {
       const [response, groups] = await Promise.all([
-        source.search(
-          q,
-          vocab.activeTerms.map((t) => t.label),
-        ),
-        source.vocabulary(q).catch(() => []),
+        source.search(q, vocab.activeTerms.map((t) => t.label), page, PAGE_SIZE),
+        refreshVocabulary
+          ? source.vocabulary(q).catch(() => [])
+          : Promise.resolve(null),
       ]);
       if (seq !== searchSeq.current) return;
-      vocab.load(groups);
+      if (groups !== null) vocab.load(groups);
       setSearch({ status: "done", query: q, results: response.results ?? [] });
+      setCurrentPage(page);
+      setResultTotal(response.total);
       highlights.sweepIn("all");
     } catch {
       if (seq !== searchSeq.current) return;
@@ -99,9 +114,21 @@ export default function App() {
     }
   }
 
+  function goToPage(page: number) {
+    if (
+      search.status !== "done" ||
+      page < 1 ||
+      page > pageCount ||
+      page === currentPage
+    )
+      return;
+    setSearch({ status: "loading", query: search.query });
+    loadResults(search.query, sampleData, page, false);
+  }
+
   // With sample data on, the page opens with the sample query already searched.
   useEffect(() => {
-    if (sampleData) loadResults(SAMPLE_QUERY, true);
+    if (sampleData) loadResults(SAMPLE_QUERY, true, 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- first load only
   }, []);
 
@@ -191,6 +218,18 @@ export default function App() {
   /* ---------- Render ---------- */
 
   const results = search.status === "done" ? search.results : NO_RESULTS;
+  const pageCount = Math.ceil(resultTotal / PAGE_SIZE);
+  const firstPage = Math.max(
+    1,
+    Math.min(
+      currentPage - Math.floor(PAGE_BUTTON_COUNT / 2),
+      pageCount - PAGE_BUTTON_COUNT + 1,
+    ),
+  );
+  const pageNumbers = Array.from(
+    { length: Math.min(PAGE_BUTTON_COUNT, pageCount) },
+    (_, index) => firstPage + index,
+  );
   const shown = useMemo(
     () => results.filter(passes(filters)),
     [results, filters],
@@ -290,7 +329,8 @@ export default function App() {
             <ResultsHead
               search={search}
               shown={shown.length}
-              total={results.length}
+              pageTotal={results.length}
+              total={resultTotal}
               sampleData={sampleData}
               onClearFilters={clearFilters}
             />
@@ -308,6 +348,60 @@ export default function App() {
             />
           </div>
         </main>
+        {search.status === "done" && pageCount > 1 && (
+          <nav
+            aria-label="Search results pages"
+            className="flex flex-wrap items-center justify-center gap-2 pt-6"
+          >
+            <Button
+              size="sm"
+              disabled={currentPage === 1}
+              aria-label="First Page"
+              onClick={() => goToPage(1)}
+            >
+              Start
+            </Button>
+            <Button
+              size="sm"
+              disabled={currentPage === 1}
+              aria-label="Previous page"
+              onClick={() => goToPage(currentPage - 1)}
+            >
+              Previous
+            </Button>
+            {pageNumbers.map((page) => (
+              <Button
+                key={page}
+                size="sm"
+                aria-label={`Page ${page}`}
+                aria-current={page === currentPage ? "page" : undefined}
+                className={page === currentPage ? "border-ink bg-hover-paper bg-slate-600" : ""}
+                onClick={() => goToPage(page)}
+              >
+                {page}
+              </Button>
+            ))}
+            <Button
+              size="sm"
+              disabled={currentPage === pageCount}
+              aria-label="Next page"
+              onClick={() => goToPage(currentPage + 1)}
+            >
+              Next
+            </Button>
+            <Button
+              size="sm"
+              disabled={currentPage === pageCount}
+              aria-label="Last Page"
+              onClick={() => goToPage(pageCount)}
+            >
+              End
+            </Button>
+            <span className="ml-2 text-[13px] text-graphite" aria-live="polite">
+              Page {currentPage} of {pageCount}
+            </span>
+          </nav>
+        )}
       </div>
 
       <Drawer
