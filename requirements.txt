@@ -1,4 +1,4 @@
-bs4
+beautifulsoup4
 nltk
 pyyaml
 json
@@ -7,3 +7,5 @@ os
 time
 collections
 ranx
+fastapi
+uvicorn
