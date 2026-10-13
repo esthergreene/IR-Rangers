@@ -33,6 +33,19 @@ def load_strict_qrels(path):
     return Qrels(strict)
 
 
+def load_run(collection, model, qset):
+    """
+    Load a run file as a new Run object.
+
+    ranx's make_comparable=True changes a Run in place (dropping queries that
+    are not in the QRELs), so each evaluation gets its own fresh copy.
+    """
+    run = Run.from_file(str(RUNS_DIR / run_filename(collection, model, qset)), kind="trec")
+    # Name used as the row label in the significance tables
+    run.name = "BM25" if model == "bm25" else "TF-IDF"
+    return run
+
+
 def evaluate_graded(qrels, run):
     """Evaluates metrics using graded relevance (includes levels 1 and 2)."""
     # Note: Do not call set_relevance_level here so it uses all graded levels (0/1/2)
@@ -49,9 +62,17 @@ def evaluate_strict(qrels_strict, run):
 def run_significance_test(qrels, run_bm25, run_tfidf, metrics, title):
     """Performs statistical significance testing (Student's t-test) between two models."""
     print(f"\n================ {title} ================")
+    # compare() requires runs and QRELs to cover the same queries (e.g. strict
+    # QRELs omit queries with no grade-2 document), so align each run first.
+    runs = []
+    for run in (run_bm25, run_tfidf):
+        name = run.name
+        run = run.make_comparable(qrels)
+        run.name = name
+        runs.append(run)
     report = compare(
         qrels=qrels, 
-        runs=[run_bm25, run_tfidf], 
+        runs=runs, 
         metrics=metrics, 
         max_p = 0.05,
         stat_test="student"
@@ -87,52 +108,60 @@ def main():
     qrels_paper_strict = load_strict_qrels(qrels_paper_path)
     qrels_paragraph_strict = load_strict_qrels(qrels_paragraph_path)
 
-    # 2. Load the 4 runs ({paper, paragraph} x {bm25, tfidf})
-    run_paper_bm25 = Run.from_file(str(RUNS_DIR / run_filename("paper", "bm25", qset)), kind="trec")
-    run_paper_tfidf = Run.from_file(str(RUNS_DIR / run_filename("paper", "tfidf", qset)), kind="trec")
-    run_paragraph_bm25 = Run.from_file(str(RUNS_DIR / run_filename("paragraph", "bm25", qset)), kind="trec")
-    run_paragraph_tfidf = Run.from_file(str(RUNS_DIR / run_filename("paragraph", "tfidf", qset)), kind="trec")
-
-    # Names used as row labels in the significance tables
-    run_paper_bm25.name = run_paragraph_bm25.name = "BM25"
-    run_paper_tfidf.name = run_paragraph_tfidf.name = "TF-IDF"
-
+    # 2. Runs ({paper, paragraph} x {bm25, tfidf}) are loaded fresh with
+    #    load_run() at each use, since evaluation can modify a Run in place.
 
     # 3. Evaluate Paper Runs
     print("\n--- PAPER COLLECTION EVALUATION ---")
     print("Graded Evaluation (Paper):")
-    print(evaluate_graded(qrels_paper_graded, run_paper_bm25))
-    print(evaluate_graded(qrels_paper_graded, run_paper_tfidf))
+    print(evaluate_graded(qrels_paper_graded, load_run("paper", "bm25", qset)))
+    print(evaluate_graded(qrels_paper_graded, load_run("paper", "tfidf", qset)))
     
     print("\nStrict Evaluation (Paper):")
-    print(evaluate_strict(qrels_paper_strict, run_paper_bm25))
-    print(evaluate_strict(qrels_paper_strict, run_paper_tfidf))
+    print(evaluate_strict(qrels_paper_strict, load_run("paper", "bm25", qset)))
+    print(evaluate_strict(qrels_paper_strict, load_run("paper", "tfidf", qset)))
 
     # 4. Evaluate Paragraph Runs
     print("\n--- PARAGRAPH COLLECTION EVALUATION ---")
     print("Graded Evaluation (Paragraph):")
-    print(evaluate_graded(qrels_paragraph_graded, run_paragraph_bm25))
-    print(evaluate_graded(qrels_paragraph_graded, run_paragraph_tfidf))
+    print(evaluate_graded(qrels_paragraph_graded, load_run("paragraph", "bm25", qset)))
+    print(evaluate_graded(qrels_paragraph_graded, load_run("paragraph", "tfidf", qset)))
     
     print("\nStrict Evaluation (Paragraph):")
-    print(evaluate_strict(qrels_paragraph_strict, run_paragraph_bm25))
-    print(evaluate_strict(qrels_paragraph_strict, run_paragraph_tfidf))
+    print(evaluate_strict(qrels_paragraph_strict, load_run("paragraph", "bm25", qset)))
+    print(evaluate_strict(qrels_paragraph_strict, load_run("paragraph", "tfidf", qset)))
 
     # 5. Run Statistical Significance Comparisons (BM25 vs TF-IDF)
     run_significance_test(
         qrels=qrels_paper_graded,
-        run_bm25=run_paper_bm25,
-        run_tfidf=run_paper_tfidf,
-        metrics=["mrr", "ndcg@10", "precision@5"],
+        run_bm25=load_run("paper", "bm25", qset),
+        run_tfidf=load_run("paper", "tfidf", qset),
+        metrics=["ndcg", "ndcg@5", "mrr", "precision@5", "precision@10"],
         title="Paper Models Significance Test (BM25 vs TF-IDF)"
     )
 
     run_significance_test(
+        qrels=qrels_paper_strict,
+        run_bm25=load_run("paper", "bm25", qset),
+        run_tfidf=load_run("paper", "tfidf", qset),
+        metrics=["mrr", "precision@5"],
+        title="Paper Models Significance Test, strict (BM25 vs TF-IDF)"
+    )
+
+    run_significance_test(
         qrels=qrels_paragraph_graded,
-        run_bm25=run_paragraph_bm25,
-        run_tfidf=run_paragraph_tfidf,
-        metrics=["mrr", "ndcg@10", "precision@5"],
+        run_bm25=load_run("paragraph", "bm25", qset),
+        run_tfidf=load_run("paragraph", "tfidf", qset),
+        metrics=["ndcg", "ndcg@5", "mrr", "precision@5", "precision@10"],
         title="Paragraph Models Significance Test (BM25 vs TF-IDF)"
+    )
+
+    run_significance_test(
+        qrels=qrels_paragraph_strict,
+        run_bm25=load_run("paragraph", "bm25", qset),
+        run_tfidf=load_run("paragraph", "tfidf", qset),
+        metrics=["mrr", "precision@5"],
+        title="Paragraph Models Significance Test, strict (BM25 vs TF-IDF)"
     )
 
 
