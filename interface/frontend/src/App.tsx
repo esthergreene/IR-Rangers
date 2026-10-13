@@ -139,9 +139,16 @@ export default function App() {
       setCurrentPage(page);
       setResultTotal(response.total);
       highlights.sweepIn("all");
-    } catch {
+    } catch (error) {
       if (seq !== searchSeq.current) return;
-      setSearch({ status: "error", query: q });
+      setSearch({
+        status: "error",
+        query: q,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Check the connection and search again.",
+      });
     }
   }
 
@@ -176,15 +183,17 @@ export default function App() {
 
   function changeModel(nextModel: SearchModel) {
     setModel(nextModel);
+    if (sampleData) setSampleData(false);
     if (search.status !== "idle") {
-      runSearch(search.query, sampleData, nextModel, collection, false);
+      runSearch(search.query, false, nextModel, collection, false);
     }
   }
 
   function changeCollection(nextCollection: SearchCollection) {
     setCollection(nextCollection);
+    if (sampleData) setSampleData(false);
     if (search.status !== "idle") {
-      runSearch(search.query, sampleData, model, nextCollection, false);
+      runSearch(search.query, false, model, nextCollection, false);
     }
   }
 

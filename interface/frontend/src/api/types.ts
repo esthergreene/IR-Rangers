@@ -16,6 +16,8 @@ export interface SearchResponse {
   query: string
   results: SearchResult[]
   total: number
+  model: SearchModel
+  collection: SearchCollection
 }
 
 export type SearchModel = 'bm25' | 'tfidf'

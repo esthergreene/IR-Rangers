@@ -58,7 +58,7 @@ export default function SettingsPage({
         </SettingGroup>
         {sampleData && (
           <p className="-mt-4 text-[13px] text-graphite">
-            The model and collection settings take effect when sample data is turned off.
+            Changing the model or collection turns sample data off and reruns the current query against the search backend.
           </p>
         )}
       </div>

@@ -32,7 +32,12 @@ export const backendApi: SearchApi = {
       collection,
     })
     for (const term of terms) params.append('term', term)
-    return getJson<SearchResponse>('/search', params)
+    return getJson<SearchResponse>('/search', params).then((response) => {
+      if (response.model !== model || response.collection !== collection) {
+        throw new Error('The search backend did not apply the selected model and collection. Restart the backend and try again.')
+      }
+      return response
+    })
   },
 
   vocabulary(query) {

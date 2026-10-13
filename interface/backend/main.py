@@ -110,7 +110,11 @@ def get_paragraph_metadata(doc_id, index):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "models": ["bm25", "tfidf"],
+        "collections": ["paper", "paragraph"],
+    }
 
 # Results per query that can be browsed: the same depth as the submitted TREC run files.
 MAX_RESULTS = 100
@@ -152,7 +156,13 @@ def search(
                 "excerpt": excerpt,
             })
 
-    return {"query": q, "results": results, "total": len(ranked)}
+    return {
+        "query": q,
+        "results": results,
+        "total": len(ranked),
+        "model": model,
+        "collection": collection,
+    }
 
 @app.get("/api/vocabulary")
 def vocabulary(q: str):

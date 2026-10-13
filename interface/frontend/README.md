@@ -13,10 +13,10 @@ npm run lint
 
 ## Sample data vs. the backend
 
-The backend isn't built yet, so the app can run on the synthesized data from the prototype. Turn **Sample data** on or off at the bottom of the menu (☰). Each browser remembers the choice.
+The app can run on synthesized prototype data or use the FastAPI backend. Turn **Sample data** on or off at the bottom of the menu (☰). Each browser remembers the choice.
 
-- **On** (the default): every query returns the same six sample documents after a short delay, so you can try search, suggestions, vocabulary and filters.
-- **Off**: requests go to the backend client in `src/api/backend.ts`. With no server running they fail, and the results area shows "Search didn't respond."
+- **On** (the default): queries return demonstration documents after a short delay. Changing the model or collection in Settings automatically turns sample data off and reruns the current query against the backend.
+- **Off**: requests go to the backend client in `src/api/backend.ts`. Start the backend with `bash scripts/run.sh --interface` from the repository root; without a server, the results area shows "Search didn't respond."
 
 Optional environment variables (put them in `.env.local`):
 
@@ -31,7 +31,7 @@ Optional environment variables (put them in `.env.local`):
 
 | Request | Response |
 | --- | --- |
-| `GET /search?q=<query>&term=<t>&term=<t>…` | `{ query, results: SearchResult[] }` |
+| `GET /search?q=<query>&page=<n>&page_size=<n>&model=<name>&collection=<name>&term=<t>…` | `{ query, results: SearchResult[], total, model, collection }` |
 | `GET /vocabulary?q=<query>` | `VocabularyGroup[]` |
 | `GET /suggest?q=<partial query>` | `string[]` |
 

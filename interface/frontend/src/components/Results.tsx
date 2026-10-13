@@ -7,7 +7,7 @@ export type SearchState =
   | { status: 'idle' }
   | { status: 'loading'; query: string }
   | { status: 'done'; query: string; results: SearchResult[] }
-  | { status: 'error'; query: string }
+  | { status: 'error'; query: string; message: string }
 
 export interface HighlightOptions {
   /** Matches every term that currently has a highlight span (see `buildMatcher`). */
@@ -53,7 +53,7 @@ export function ResultsHead({ search, shown, pageTotal, total, sampleData, onCle
         </p>
         {sampleData && (
           <span
-            title="Every query returns these sample results. Turn off sample data in the menu to use the backend."
+            title="These are demonstration results, not actual retrieval. Change the model or collection in Settings to run the query against the backend."
             className="rounded-full border border-rule-strong px-2.5 py-0.5 text-[12.5px] whitespace-nowrap text-graphite"
           >
             Sample data
@@ -89,7 +89,7 @@ export function ResultList({ ref, search, shown, sampleData, highlight, onOpenDo
     content = <EmptyState title="Enter a query to search the collection." body="Results appear here, with related terms highlighted." />
   } else if (search.status === 'error') {
     content = (
-      <EmptyState title="Search didn't respond." body="Check the connection and search again.">
+      <EmptyState title="Search didn't respond." body={search.message}>
         {!sampleData && <Button onClick={onUseSampleData}>Use sample data instead</Button>}
       </EmptyState>
     )
