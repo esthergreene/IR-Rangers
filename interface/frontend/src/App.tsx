@@ -24,6 +24,7 @@ import { Toast } from "./components/Toast";
 import { VocabBar, VocabPanel } from "./components/Vocabulary";
 import { useHighlightSweep } from "./hooks/useHighlightSweep";
 import { useSampleDataSetting } from "./hooks/useSampleDataSetting";
+import { useSearchHistory } from "./hooks/useSearchHistory";
 import { useSearchPreferences } from "./hooks/useSearchPreferences";
 import { useToast } from "./hooks/useToast";
 import { useVocabulary } from "./hooks/useVocabulary";
@@ -50,6 +51,7 @@ type Panel = "vocab" | "filters" | null;
 export default function App() {
   const [sampleData, setSampleData] = useSampleDataSetting();
   const { model, setModel, collection, setCollection } = useSearchPreferences();
+  const history = useSearchHistory();
   const api = getSearchApi(sampleData);
 
   const [query, setQuery] = useState(() => (sampleData ? SAMPLE_QUERY : ""));
@@ -87,6 +89,7 @@ export default function App() {
     useSampleData = sampleData,
     useModel: SearchModel = model,
     useCollection: SearchCollection = collection,
+    recordHistory = true,
   ) {
     const q = normalize(raw);
     closeFilters();
@@ -98,6 +101,7 @@ export default function App() {
       inputRef.current?.focus();
       return;
     }
+    if (recordHistory) history.add(q);
     setCurrentPage(1);
     setResultTotal(0);
     setSearch({ status: "loading", query: q });
@@ -163,24 +167,24 @@ export default function App() {
     setSampleData(useSampleData);
     const lastQuery = search.status === "idle" ? "" : search.query;
     if (lastQuery) {
-      runSearch(lastQuery, useSampleData);
+      runSearch(lastQuery, useSampleData, model, collection, false);
     } else if (useSampleData) {
       setQuery(SAMPLE_QUERY);
-      runSearch(SAMPLE_QUERY, true);
+      runSearch(SAMPLE_QUERY, true, model, collection, false);
     }
   }
 
   function changeModel(nextModel: SearchModel) {
     setModel(nextModel);
     if (search.status !== "idle") {
-      runSearch(search.query, sampleData, nextModel, collection);
+      runSearch(search.query, sampleData, nextModel, collection, false);
     }
   }
 
   function changeCollection(nextCollection: SearchCollection) {
     setCollection(nextCollection);
     if (search.status !== "idle") {
-      runSearch(search.query, sampleData, model, nextCollection);
+      runSearch(search.query, sampleData, model, nextCollection, false);
     }
   }
 
@@ -462,7 +466,25 @@ export default function App() {
         ) : (
           <main className="mx-auto mt-10 w-full max-w-3xl">
             {activePage === "Collections" && <CollectionsPage />}
-            {activePage === "Search history" && <SearchHistoryPage />}
+            {activePage === "Search history" && (
+              <SearchHistoryPage
+                entries={history.entries}
+                onSearch={(previousQuery) => {
+                  setQuery(previousQuery);
+                  setActivePage("Search");
+                  runSearch(
+                    previousQuery,
+                    sampleData,
+                    model,
+                    collection,
+                    false,
+                  );
+                }}
+                onRemove={history.remove}
+                onClearDate={history.clearDate}
+                onClearAll={history.clearAll}
+              />
+            )}
             {activePage === "Settings" && (
               <SettingsPage
                 model={model}

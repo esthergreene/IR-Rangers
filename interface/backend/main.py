@@ -113,76 +113,46 @@ def health():
 MAX_RESULTS = 100
 
 @app.get("/api/search")
-def search(q: str, page: int = Query(1, ge=1), page_size: int = Query(10, ge=1, le=100)):
+def search(
+    q: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    model: Literal["bm25", "tfidf"] = "bm25",
+    collection: Literal["paper", "paragraph"] = "paper",
+):
     tokens = tokenizer.tokenize(q)
 
     # Rank the top MAX_RESULTS once, then return the requested page of them.
-    ranked = bm25_model.search(tokens, k=MAX_RESULTS)
+    ranked = get_search_model(model, collection).search(tokens, k=MAX_RESULTS)
     start = (page - 1) * page_size
     matches = ranked[start:start + page_size]
     results = []
 
     for doc_id, score in matches:
-        paper = paper_metadata.get(doc_id)
+        if collection == "paper":
+            paper = paper_metadata.get(doc_id)
+            excerpt = paper["abstract"][:300] if paper else ""
+        else:
+            paragraph = get_paragraph_metadata(doc_id, get_collection_index("paragraph"))
+            paper = paper_metadata.get(paragraph["paper_id"])
+            excerpt = paragraph["text"][:300]
 
         if paper:
             results.append({
                 "id": doc_id,
-                "type": "Paper",
+                "type": "Paper" if collection == "paper" else "Paragraph",
                 "via": "from",
                 "source": "arXiv",
                 "year": paper["year"],
                 "format": "Research Paper",
                 "title": paper["title"],
-                "excerpt": paper["abstract"][:300]
+                "excerpt": excerpt,
             })
 
-    return {
-        "query": q,
-        "results": results,
-        "total": len(ranked),
-    }
-
-@app.get("/api/vocabulary")
-def vocabulary(q: str):
-    tokens = tokenizer.tokenize(q)
-    unique_tokens = list(dict.fromkeys(tokens))
-
-    return [
-        {
-            "id": "query",
-            "label": "Search terms",
-            "color": "yellow",
-            "terms": [
-                {"term": token, "on": True}
-                for token in unique_tokens
-            ]
-        }
-    ]
-
+    return {"query": q, "results": results, "total": len(ranked)}
+    
 @app.get("/api/suggest")
 def suggest(q: str):
-    # Find paper titles
-    query = q.strip().lower()
-
-    if not query:
-        return []
-
-    suggestions = []
-
-    for paper in paper_metadata.values():
-        title = paper["title"]
-
-        if title and title.lower().startswith(query):
-            suggestions.append(title)
-
-        if len(suggestions) == 5:
-            break
-
-    return suggestions
-
-@app.get("/api/settings")
-def settings(q: str):
     # Find paper titles
     query = q.strip().lower()
 
