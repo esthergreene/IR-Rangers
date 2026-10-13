@@ -1,4 +1,3 @@
-
 """
 Run a retrieval model over a query file and write a TREC-formatted run file.
 
@@ -15,6 +14,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
+from src.common.bm25_config import load_bm25_params
 from src.common.queries import load_queries
 from src.common.trec import run_filename, write_run
 from src.index.indexer import load_index as load_saved_index
@@ -34,8 +34,8 @@ def parse_args():
     parser.add_argument("--processed", type=Path, default=REPO_ROOT / "data" / "processed", help="Folder containing the saved indexes")
     parser.add_argument("--output", type=Path, default=REPO_ROOT / "runs", help="Folder to write the run file to (default: runs/)")
     parser.add_argument("--k", type=int, default=100, help="Results per query (default: 100)")
-    parser.add_argument("--k1", type=float, default=0.9, help="BM25 k1 parameter (default: 0.9)")
-    parser.add_argument("--b", type=float, default=0.4, help="BM25 b parameter (default: 0.4)")
+    parser.add_argument("--k1", type=float, default=None, help="BM25 k1 parameter (default: tuned value from config/bm25.yaml)")
+    parser.add_argument("--b", type=float, default=None, help="BM25 b parameter (default: tuned value from config/bm25.yaml)")
     parser.add_argument("--limit-queries", type=int, default=None, help="Only run the first N queries (for quick tests)")
 
     return parser.parse_args()
@@ -45,6 +45,26 @@ def load_index(collection, processed_dir):
     Load the index for one collection.
     """
     return load_saved_index(processed_dir / COLLECTION_FILES[collection])
+
+def build_model(args, index):
+    """
+    Create the requested model.
+
+    For BM25, any of k1/b not given on the command line comes from
+    config/bm25.yaml for the chosen collection.
+    """
+    if args.model == "tfidf":
+        print("  model: TF-IDF")
+        return TFIDFModel(index)
+
+    k1, b = args.k1, args.b
+    if k1 is None or b is None:
+        tuned_k1, tuned_b = load_bm25_params(args.collection)
+        k1 = tuned_k1 if k1 is None else k1
+        b = tuned_b if b is None else b
+    source = "tuned" if args.k1 is None and args.b is None else "overridden on command line"
+    print(f"  model: BM25 (k1={k1}, b={b}, {source})")
+    return BM25Model(index, k1=k1, b=b)
 
 def main():
     args = parse_args()
@@ -60,12 +80,7 @@ def main():
     print(f"Loading {args.collection} index from {args.processed}...")
     start = time.perf_counter()
     index = load_index(args.collection, args.processed)
-    if args.model.lower() == "bm25":
-        model = BM25Model(index, k1=args.k1, b=args.b)
-    elif args.model.lower() == "tfidf":
-        model = TFIDFModel(index)
-    else:
-        raise ValueError(f"Unknown model: {args.model}")
+    model = build_model(args, index)
     
     print(f"  {index.num_docs:,} documents, ready in {time.perf_counter() - start:.1f}s")
 
