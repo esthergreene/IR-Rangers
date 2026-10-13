@@ -3,7 +3,7 @@
 #   - conda (Miniforge), if no conda installation is found
 #   - the "ir-rangers" conda environment with the packages in requirements.txt
 #   - NLTK stopwords
-#   - Node.js (if missing or too old) and the frontned's npm packages
+#   - Node.js (if missing or too old) and the frontend's npm packages
 #   - a link to the dataset on the CS servers, if data/raw is missing
 #
 # Safe to run more than once: each step is skipped when it is already done.
@@ -54,7 +54,7 @@ install_conda() {
     bash "$download_dir/$installer" -b -p "$CONDA_INSTALL_DIR" # -b: no prompts
     rm -rf "$download_dir"
     CONDA_BASE="$CONDA_INSTALL_DIR"
-    echo "Installed. To use conda in new terminals, run: $CONDA_INSTALL_DIR/bin/conda/init"
+    echo "Installed. To use conda in new terminals, run: $CONDA_INSTALL_DIR/bin/conda init"
 }
 
 node_is_recent() {
@@ -98,14 +98,15 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 
 echo "=== Checking NLTK stopwords ==="
-if     python -c "import nltk; nltk.download('stopwords', quiet=True)" >/dev/null 2>&1; then
+if python -c "import nltk; nltk.data.find('corpora/stopwords')" >/dev/null 2>&1; then
     echo "NLTK stopwords already downloaded."
 else
-    python -m nltk.downloader -q stopwords
+    python -c "import nltk; nltk.download('stopwords', quiet=True)"
 fi
 
 # ---- Search Interface ----
 echo "=== Checking Node.js ==="
+NODE_INSTALLED=false
 if node_is_recent; then
     echo "Node.js $(node --version) already installed."
 else
@@ -113,14 +114,23 @@ else
     echo "Node.js $MIN_NODE_MAJOR+ not found. Installing it into '$ENV_NAME'..."
     conda install -y -n "$ENV_NAME" -c conda-forge --override-channels "nodejs=22"
     hash -r # make the shell look up "node" again
+    NODE_INSTALLED=true
 fi
 
 echo "=== Installing frontend packages ==="
-if [ -d "$FRONTEND_DIR/node_modules" ]; then
-    echo "Frontend packages already installed."
+# node_modules must be installed by the same Node.js that runs it: an older
+# Node's npm can skip platform-specific packages (e.g. Vite's native bundler).
+# The Node version used for the last install is recorded here.
+NODE_STAMP="$FRONTEND_DIR/node_modules/.installed-with-node"
+if ! $NODE_INSTALLED && [ -d "$FRONTEND_DIR/node_modules" ] \
+        && [ "$(cat "$NODE_STAMP" 2>/dev/null)" = "$(node --version)" ]; then
+    echo "Frontend packages already installed with Node.js $(node --version)."
 else
-    # npm ci installs the exact versions in package-lock.json
+    # npm ci removes any existing node_modules, then installs the exact
+    # versions in package-lock.json.
+    echo "Installing frontend packages with Node.js $(node --version)..."
     (cd "$FRONTEND_DIR" && npm ci)
+    node --version > "$NODE_STAMP"
 fi
 
 # ---- Data ----
@@ -132,8 +142,8 @@ elif [ -d "$SHARED_DATA" ]; then
     ln -s "$SHARED_DATA" data/raw
     echo "Linked data/raw -> $SHARED_DATA"
 else
-    echo "WARNING: data/raw was not found. Put the dataset there (JSON Files/, query
-    files," \ "and QREL files) before running scripts/run.sh." >&2
+    echo "WARNING: data/raw was not found. Put the dataset there (JSON Files/, query files," >&2
+    echo "and QREL files) before running scripts/run.sh." >&2
 fi
 
 echo "=== INSTALLATION COMPLETE ==="
