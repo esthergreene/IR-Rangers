@@ -1,6 +1,7 @@
 import { useState } from "react"
 
 const STORAGE_KEY = "ir-rangers:search-history"
+const MAX_HISTORY_ENTRIES = 100
 
 export interface SearchHistoryEntry {
   id: string
@@ -24,7 +25,9 @@ function readInitial(): SearchHistoryEntry[] {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (!saved) return []
     const parsed: unknown = JSON.parse(saved)
-    return Array.isArray(parsed) ? parsed.filter(isEntry) : []
+    return Array.isArray(parsed)
+      ? parsed.filter(isEntry).slice(0, MAX_HISTORY_ENTRIES)
+      : []
   } catch {
     return []
   }
@@ -34,9 +37,10 @@ export function useSearchHistory() {
   const [entries, setEntries] = useState(readInitial)
 
   function save(next: SearchHistoryEntry[]) {
-    setEntries(next)
+    const limited = next.slice(0, MAX_HISTORY_ENTRIES)
+    setEntries(limited)
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(limited))
     } catch {
       // History remains available for the current session if storage is unavailable.
     }

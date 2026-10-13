@@ -169,8 +169,9 @@ interface() {
     for _ in $(seq 1 "$BACKEND_STARTUP_SECONDS"); do
         if python -c "import json, urllib.request; \
 health=json.load(urllib.request.urlopen('http://$HOST:$BACKEND_PORT/api/health', timeout=1)); \
-assert health.get('status') == 'ok' and health.get('models') == ['bm25', 'tfidf'] \
-and health.get('collections') == ['paper', 'paragraph']" 2>/dev/null; then
+required_models = {'bm25', 'tfidf'}; required_collections = {'paper', 'paragraph'}; \
+assert health.get('status') == 'ok' and required_models.issubset(set(health.get('models', []))) \
+and required_collections.issubset(set(health.get('collections', [])))" 2>/dev/null; then
             ready=true
             break
         fi
