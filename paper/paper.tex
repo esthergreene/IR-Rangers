@@ -43,7 +43,8 @@ the arXiv website and as a processed JSON file containing its identifier,
 title, abstract, and paragraphs. Because the JSON files were produced with
 rule-based extraction, they contain noise such as leftover \LaTeX{} markup
 and merged words, which we discuss in Section~\ref{sec:preprocessing}.
-In total, the collection contains 2,275,574 paragraphs, or about 66 per paper.
+In total, the collection contains 2,275,574 paragraphs from across 34,308 papers, 
+or about 66 paragraphs per paper.
 
 We address two tasks over this collection: \emph{paper retrieval}, which
 returns papers identified by their arXiv ID (in YYMM.NNNNN format), and
@@ -55,10 +56,28 @@ queries whose judgments are withheld). Each set contains 30\% easy, 50\%
 medium, and 20\% hard queries. Relevance is graded on a three-point
 scale: a document that fully addresses the query is relevant (2), one that
 provides useful information without fully addressing it is partially
-relevant (1), and any document not in the judgments is considered
-non-relevant.
+relevant (1), and any document not in the judgments that provides no useful
+information is considered non-relevant.
 
 \section{Methodology}
+\label{sec:method}
+
+Our system processes both retrieval tasks with a single pipeline.
+Documents and queries are first cleaned and tokenized
+(Section~\ref{sec:preprocessing}); the processed text is used to build
+two collections, one of papers and one of paragraphs
+(Section~\ref{sec:docrep}), each with its own inverted index. Two ranking
+models, TF-IDF (Section~\ref{sec:tfidf}) and BM25
+(Section~\ref{sec:bm25}), score documents from these indexes; both use
+identical preprocessing and the same indexes, so differences between them
+reflect only their scoring functions. Section~\ref{sec:eval} describes our
+evaluation setup, and Section~\ref{sec:interface} the search interface.
+
+Throughout, $N$ denotes the number of documents in a collection,
+$\mathit{df}_t$ the number of documents containing term $t$,
+$\mathit{tf}_{t,d}$ the number of occurrences of $t$ in document $d$,
+and $L_d$ and $L_{\mathit{avg}}$ the length of $d$ and the average
+document length, in tokens.
 \subsection{Preprocessing}
 \label{sec:preprocessing}
 
@@ -102,7 +121,16 @@ math delimiter and the text between them deleted, so math spans are only
 removed from paragraphs with an even number of dollar signs. Only 1,458
 paragraphs (0.06\%) contain an unpaired dollar sign. They keep their math
 spans, although \LaTeX{} command removal and the token filters still
-remove most of the resulting tokens.
+remove most of the resulting tokens. We evaluate the effect of this choice 
+on retrieval in Section~\ref{sec:analysis}.
+
+Some extraction noise is not addressed by preprocessing. Adjacent words
+are occasionally merged (e.g., ``andenthusiasts'', ``inmedical''), and
+this also occurs in queries: Test query 2251 contains ``sustainedvowel''.
+Such tokens cannot match their component words. Display equations are
+absent from the extracted text altogether, and the \texttt{abstract}
+field contains more merged words than the copy of the abstract that
+appears as each paper's first paragraph (Section~\ref{sec:docrep}).
 
 \begin{table}[h]
   \caption{Paragraph collection statistics under three preprocessing
@@ -147,16 +175,74 @@ how these are handled in Section~\ref{sec:docrep}.
 
 \subsection{Document Representation}
 \label{sec:docrep}
-\subsection{Search Interface}
-\subsection{BM25}
 \subsection{TF-IDF}
+\label{sec:tfidf}
+\subsection{BM25}
+\label{sec:bm25}
+\subsubsection{Parameter Tuning}
+% \begin{figure}[h]
+%   \includegraphics[width=\columnwidth]{figures/bm25_tuning_paper_full.pdf}
+% \caption{BM25 nDCG@5 scores on 1,600 training queries (paper collection). 
+% Rows represent $k_1$ values and columns represent $b$ values (not to scale); 
+% all scores are rounded to three decimal places. The outlined cell marks the 
+% selected setting ($k_1 = 4.0, b = 0.75$), which achieved the highest score 
+% prior to rounding. This optimal setting lies within a broad plateau 
+% ($k_1 \geq 3, 0.5 \leq b \leq 0.9$) where scores differ by roughly 
+% 0.01 or less, meaning neighboring parameters (e.g., $k_1 = 5, b = 0.6$) 
+% perform equivalently.}
+%   \label{fig:tuning-paper}
+% \end{figure}
+
+% \begin{figure}[h]
+%   \includegraphics[width=\columnwidth]{figures/bm25_tuning_paragraph_full.pdf}
+% \caption{Paragraph tuning results}
+%   \label{fig:tuning-paragraph}
+% \end{figure}
+
+\subsection{Search Interface}
+\label{sec:interface}
 \subsection{Evaluation Setup}
+\label{sec:eval}
 
 \section{Evaluation Results}
 \subsection{Metrics}
 \subsection{Efficiency}
 
 \section{Results Analysis}
+\label{sec:analysis}
+
+\begin{table}[h]
+  \caption{Effect of keeping inline math on Study nDCG@5 (BM25 parameters
+    tuned for the math-removed configuration). $^{*}$ marks a significant
+    difference (paired t-test, $p < 0.05$).}
+  \label{tab:keepmath}
+  \small
+  \begin{tabular}{lrr}
+    \toprule
+    & Math removed & Math kept \\
+    \midrule
+    Papers, TF-IDF     & 0.313 & 0.379$^{*}$ \\
+    Papers, BM25       & 0.514 & 0.542 \\
+    Paragraphs, TF-IDF & 0.229 & 0.235 \\
+    Paragraphs, BM25   & 0.416$^{*}$ & 0.378 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+As an ablation, we reran the pipeline without inline-math removal
+(Table~\ref{tab:keepmath}). Keeping math significantly improved TF-IDF on
+papers across all metrics, but changed BM25 on papers only modestly
+(significant only for P@5), and significantly reduced BM25 on paragraphs
+(all graded metrics and strict MRR). Spelled-out notation in queries
+(e.g., ``epsilon'', ``kappa'') can match LaTeX tokens when math is kept,
+which helps when aggregated over whole papers; in paragraphs, the
+previously empty, math-only fragments become retrievable and compete with
+prose. Math removal therefore suits our strongest paragraph system and is
+close to neutral for our strongest paper system. As such, we elected to keep
+math removal in the final preprocessing pipeline to optimize the metrics of 
+our best performing model: BM25. Choosing preprocessing per collection, 
+validated on Train queries with retuned BM25 parameters, would be a suitable 
+direction for future work.
 
 \section{Conclusion}
 
