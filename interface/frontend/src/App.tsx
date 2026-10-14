@@ -15,6 +15,7 @@ import { FilterButton, FilterPanel } from "./components/Filters";
 import { MenuIcon } from "./components/icons";
 import { Button } from "./components/buttons";
 import { DocumentPreview } from "./components/DocumentPreview";
+import { CollectionSaveDialog } from "./components/CollectionSaveDialog";
 import {
   ResultList,
   ResultsHead,
@@ -25,6 +26,8 @@ import { SearchBox } from "./components/SearchBox";
 import { Toast } from "./components/Toast";
 import { VocabBar, VocabPanel } from "./components/Vocabulary";
 import { useHighlightSweep } from "./hooks/useHighlightSweep";
+import { useCollectionEntry } from "./hooks/useCollectionEntry";
+import type { SavedDocument } from "./hooks/useCollectionEntry";
 import { useSampleDataSetting } from "./hooks/useSampleDataSetting";
 import { useSearchHistory } from "./hooks/useSearchHistory";
 import { useSearchPreferences } from "./hooks/useSearchPreferences";
@@ -54,6 +57,7 @@ export default function App() {
   const [sampleData, setSampleData] = useSampleDataSetting();
   const { model, setModel, collection, setCollection } = useSearchPreferences();
   const history = useSearchHistory();
+  const collectionStore = useCollectionEntry();
   const api = getSearchApi(sampleData);
 
   const [query, setQuery] = useState(() => (sampleData ? SAMPLE_QUERY : ""));
@@ -73,6 +77,7 @@ export default function App() {
     document: DocumentPreviewData | null;
     error: string | null;
   } | null>(null);
+  const [documentToSave, setDocumentToSave] = useState<SearchResult | null>(null);
   const vocab = useVocabulary();
   const highlights = useHighlightSweep();
   const toast = useToast();
@@ -205,11 +210,18 @@ export default function App() {
     }
   }
 
-  async function openDocumentPreview(result: SearchResult) {
+  async function openDocumentPreview(
+    result: SearchResult,
+    searchCollection: SearchCollection = collection,
+    useSampleData = sampleData,
+  ) {
     const seq = ++previewSeq.current;
     setDocumentPreview({ status: "loading", document: null, error: null });
     try {
-      const document = await getSearchApi(sampleData).preview(result.id, collection);
+      const document = await getSearchApi(useSampleData).preview(
+        result.id,
+        searchCollection,
+      );
       if (seq !== previewSeq.current) return;
       setDocumentPreview({ status: "done", document, error: null });
     } catch (error) {
@@ -228,6 +240,60 @@ export default function App() {
   function closeDocumentPreview() {
     previewSeq.current++;
     setDocumentPreview(null);
+  }
+
+  function saveDocumentToCollection(
+    collectionId: string,
+    newCollectionName: string,
+  ) {
+    if (!documentToSave) return;
+    try {
+      const saved = collectionStore.saveDocument(
+        documentToSave,
+        collection,
+        sampleData,
+        collectionId,
+        newCollectionName,
+      );
+      toast.show(
+        saved.alreadySaved
+          ? `Already saved in “${saved.collectionName}”.`
+          : `Saved to “${saved.collectionName}”.`,
+      );
+      setDocumentToSave(null);
+    } catch (error) {
+      toast.show(
+        error instanceof Error ? error.message : "Could not save this document.",
+      );
+    }
+  }
+
+  function openSavedDocument(document: SavedDocument) {
+    openDocumentPreview(
+      document.result,
+      document.searchCollection,
+      document.sampleData,
+    );
+  }
+
+  function removeSavedDocument(collectionId: string, documentId: string) {
+    try {
+      collectionStore.removeDocument(collectionId, documentId);
+    } catch (error) {
+      toast.show(
+        error instanceof Error ? error.message : "Could not remove this document.",
+      );
+    }
+  }
+
+  function deleteSavedCollection(collectionId: string) {
+    try {
+      collectionStore.deleteCollection(collectionId);
+    } catch (error) {
+      toast.show(
+        error instanceof Error ? error.message : "Could not delete this collection.",
+      );
+    }
   }
 
   /* ---------- Vocabulary ---------- */
@@ -436,6 +502,7 @@ export default function App() {
                   sampleData={sampleData}
                   highlight={highlight}
                   onOpenDocument={openDocumentPreview}
+                  onBookmark={setDocumentToSave}
                   onClearFilters={clearFilters}
                   onUseSampleData={() => changeDataSource(true)}
                 />
@@ -505,7 +572,15 @@ export default function App() {
           </>
         ) : (
           <main className="mx-auto mt-10 w-full max-w-3xl">
-            {activePage === "Collections" && <CollectionsPage />}
+            {activePage === "Collections" && (
+              <CollectionsPage
+                collections={collectionStore.collections}
+                storageError={collectionStore.error}
+                onOpenDocument={openSavedDocument}
+                onRemoveDocument={removeSavedDocument}
+                onDeleteCollection={deleteSavedCollection}
+              />
+            )}
             {activePage === "Search history" && (
               <SearchHistoryPage
                 entries={history.entries}
@@ -556,6 +631,14 @@ export default function App() {
         <DocumentPreview
           preview={documentPreview}
           onClose={closeDocumentPreview}
+        />
+      )}
+      {documentToSave && (
+        <CollectionSaveDialog
+          collections={collectionStore.collections}
+          documentTitle={documentToSave.title}
+          onSave={saveDocumentToCollection}
+          onClose={() => setDocumentToSave(null)}
         />
       )}
       <Toast message={toast.message} visible={toast.visible} />

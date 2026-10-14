@@ -18,6 +18,7 @@ The app can run on synthesized prototype data or use the FastAPI backend. Turn *
 - **On** (the default): queries return demonstration documents after a short delay. Changing the model or collection in Settings automatically turns sample data off and reruns the current query against the backend.
 - **Off**: requests go to the backend client in `src/api/backend.ts`. Start the backend with `bash scripts/run.sh --interface` from the repository root; without a server, the results area shows "Search didn't respond."
 - Search history is stored on the current device and capped at the 100 most recent searches.
+- Save results into named topic collections from the search page. Collections and their saved document details are stored in the current browser, and can be viewed, removed, or deleted from the Collections page.
 
 Optional environment variables (put them in `.env.local`):
 
@@ -44,8 +45,9 @@ Optional environment variables (put them in `.env.local`):
 ```
 src/
   api/          SearchApi types, sample data, backend client
-  hooks/        vocabulary state, highlight animation, sample-data setting, toast
-  components/   search box, vocabulary bar/panel, filters, results, drawer
+  hooks/        vocabulary state, highlight animation, collections, preferences, toast
+  components/   search box, vocabulary bar/panel, filters, results, collection save dialog, drawer
+  collections.tsx   saved topic collections page
   lib/          text matching and filter helpers
   index.css     design tokens (light/dark) exposed to Tailwind via @theme
   App.tsx       page layout and the state that ties the pieces together

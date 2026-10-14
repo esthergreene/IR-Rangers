@@ -77,11 +77,12 @@ interface ResultListProps {
   sampleData: boolean
   highlight: HighlightOptions
   onOpenDocument(result: SearchResult): void
+  onBookmark(result: SearchResult): void
   onClearFilters(): void
   onUseSampleData(): void
 }
 
-export function ResultList({ ref, search, shown, sampleData, highlight, onOpenDocument, onClearFilters, onUseSampleData }: ResultListProps) {
+export function ResultList({ ref, search, shown, sampleData, highlight, onOpenDocument, onBookmark, onClearFilters, onUseSampleData }: ResultListProps) {
   let content: ReactNode
   if (search.status === 'loading') {
     content = [0, 1, 2].map((i) => <SkeletonRow key={i} />)
@@ -101,7 +102,14 @@ export function ResultList({ ref, search, shown, sampleData, highlight, onOpenDo
     )
   } else {
     content = shown.map((result, i) => (
-      <ResultRow key={result.id} result={result} index={i} highlight={highlight} onOpen={onOpenDocument} />
+      <ResultRow
+        key={result.id}
+        result={result}
+        index={i}
+        highlight={highlight}
+        onOpen={onOpenDocument}
+        onBookmark={onBookmark}
+      />
     ))
   }
 
@@ -118,33 +126,34 @@ export function ResultList({ ref, search, shown, sampleData, highlight, onOpenDo
 
 const ROW = 'grid grid-cols-[44px_minmax(0,1fr)] gap-x-5 rounded-row border border-rule bg-paper py-5 pr-6 pl-5 max-sm:grid-cols-[30px_minmax(0,1fr)] max-sm:gap-x-3.5 max-sm:p-4'
 
-function ResultRow({ result, index, highlight, onOpen }: { result: SearchResult; index: number; highlight: HighlightOptions; onOpen(result: SearchResult): void }) {
+function ResultRow({ result, index, highlight, onOpen, onBookmark }: { result: SearchResult; index: number; highlight: HighlightOptions; onOpen(result: SearchResult): void; onBookmark(result: SearchResult): void }) {
   return (
-    <li
-      role="link"
-      tabIndex={0}
-      aria-label={`Preview document: ${result.title}`}
-      className={`${ROW} group cursor-pointer focus-visible:outline-2 focus-visible:outline-focus`}
-      style={cssVars({ '--d': `${index * 90}ms` })}
-      onClick={() => onOpen(result)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault()
-          onOpen(result)
-        }
-      }}
-    >
+    <li className={ROW} style={cssVars({ '--d': `${index * 90}ms` })}>
       <DocIcon format={result.format} />
-      <div>
-        <h2 className="text-[17px] leading-[1.3] font-semibold group-hover:underline group-hover:decoration-1 group-hover:underline-offset-3 max-sm:text-[16px]">
-          {result.title}
-        </h2>
-        <p className="mt-1.5 max-w-[68ch] font-serif text-[16px] leading-[1.62] text-ink-2 max-sm:text-[15.5px]">
-          <HighlightedText text={result.excerpt} {...highlight} />
-        </p>
-        <p className="mt-2.5 text-[13px] text-graphite">
-          {result.type} {result.via} {result.source}, {result.year}
-        </p>
+      <div className="min-w-0">
+        <button
+          type="button"
+          aria-label={`Preview document: ${result.title}`}
+          className="text-left focus-visible:outline-2 focus-visible:outline-focus"
+          onClick={() => onOpen(result)}
+        >
+          <h2 className="text-[17px] leading-[1.3] font-semibold hover:underline hover:decoration-1 hover:underline-offset-3 max-sm:text-[16px]">
+            {result.title}
+          </h2>
+          <p className="mt-1.5 max-w-[68ch] font-serif text-[16px] leading-[1.62] text-ink-2 max-sm:text-[15.5px]">
+            <HighlightedText text={result.excerpt} {...highlight} />
+          </p>
+        </button>
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-graphite">
+          <span>{result.type} {result.via} {result.source}, {result.year}</span>
+          <button
+            type="button"
+            className="font-medium text-ink-2 underline decoration-rule-strong underline-offset-2 hover:text-ink hover:decoration-current"
+            onClick={() => onBookmark(result)}
+          >
+            Save to collection
+          </button>
+        </div>
       </div>
     </li>
   )
