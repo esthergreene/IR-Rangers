@@ -52,7 +52,7 @@ retrieval, passage retrieval}
 The volume of scientific literature makes finding relevant work
 increasingly difficult, both at the level of whole papers and of the
 specific passages that answer a question. This paper describes the first
-phase of our retrieval system for arXiv papers, \footnote{Code: \url{https://github.com/esthergreene/IR-Rangers}} 
+phase of our retrieval system for arXiv papers,\footnote{Code: \url{https://github.com/esthergreene/IR-Rangers}} 
 which applies two traditional term-matching models, TF-IDF and BM25, to 
 retrieving both papers and individual paragraphs. We describe our preprocessing 
 of a noisy collection, tune BM25 per task, evaluate both models with
@@ -209,7 +209,7 @@ We construct two separate document collections from the processed JSONL files, n
 
 For paragraph retrieval, we treat each non-empty paragraph as an individual document. Of the 2,275,574 original paragraphs, 8,389 become empty after preprocessing, so we exclude them. This leaves us with 2,267,185 indexed paragraphs. We keep the first paragraph of each paper because abstract paragraphs can themselves be judged relevant, as demonstrated by paragraph 2409.12643\_1 in the Train relevance judgments. 
 
-Both collections use inverted indexes that map each term to a postings list containing document numbers and term frequencies. The indexes also store individual document lengths and average document length, supporting the retrieval models described in Sections\ref{sec:tfidf} and~\ref{sec:bm25}. Each index is built from its processed JSONL collection and saved as a JSON file. This means subsequent runs can load the existing index without rebuilding it. The paper and paragraph indexes occupy 242 MB and 974 MB on disk, with loading times of approximately 9.2 and 29.0 seconds (Table~\ref{tab:efficiency}).
+Both collections use inverted indexes that map each term to a postings list containing document numbers and term frequencies. The indexes also store individual document lengths and average document length, supporting the retrieval models described in Sections~\ref{sec:tfidf} and~\ref{sec:bm25}. Each index is built from its processed JSONL collection and saved as a JSON file. This means subsequent runs can load the existing index without rebuilding it. The paper and paragraph indexes occupy 242 MB and 974 MB on disk, with loading times of approximately 9.4 and 28.7 seconds (Table~\ref{tab:efficiency}).
 \subsection{TF-IDF}
 \label{sec:tfidf}
 TF-IDF~\cite[Ch.~6]{manning2008irbook} weights a term in a document by
@@ -229,7 +229,7 @@ and base-10 logarithms:
   \label{eq:tfidf-weight}
 \end{equation}
 Query weights $w_{t,q}$ are computed the same way from the number of
-times t occurs in the query. A document's score is the cosine of the
+times $t$ occurs in the query. A document's score is the cosine of the
 angle between the two weight vectors:
 \begin{equation}
   \mathrm{score}(q,d) =
@@ -256,7 +256,7 @@ all postings. At query time, the query, preprocessed as in
 Section~\ref{sec:preprocessing}, is weighted as above, skipping terms
 that are absent from the index or have zero IDF. For each remaining
 term, a Python loop walks its postings and accumulates
-$w_{t,q}, w_{t,d}$ for each document; the sums are then divided by the
+$w_{t,q}\, w_{t,d}$ for each document; the sums are then divided by the
 norms. The top 100 documents are selected with a heap, with ties broken
 by internal document number, as for BM25.
 
@@ -329,9 +329,10 @@ roughly a day of computation. We therefore vectorized scoring with NumPy, so tha
 loop over query terms remains in Python. Each term's postings (its document numbers and term 
 frequencies) are converted to arrays once and cached; the term's contributions to all documents 
 in its postings are then computed in one array operation and added to a dense score array indexed 
-by document number. The top 100 are found by partial selection rather than a full sort. This reduced 
-average search time to 15~ms on papers and 105~ms on paragraphs, speedups of 6$\times$ and 10$\times$ 
-(Section~\ref{sec:efficiency}), and the full paper grid search ran in about eight minutes. The 
+by document number. The top 100 are found by partial selection rather than a full sort. On the same 50 queries, 
+this reduced average search time from 91~ms to 15~ms on papers and from 1.08~s to 105~ms on paragraphs, speedups of
+6$\times$ and 10$\times$; over all 250 Study queries it averages 9.2~ms
+and 74.3~ms (Section~\ref{sec:efficiency}). The full paper grid search ran in about eight minutes. The 
 vectorized version produced the exact same evaluation metrics as the original on our tuning queries 
 over the full index.
 
@@ -361,10 +362,11 @@ partly because of a long tail of very long paragraphs produced by extraction err
 length. The paper optimum also lies on a broad plateau ($k_1 \geq 3$, $0.5 \leq b \leq 0.9$) in 
 which scores differ by about 0.01 or less, so the exact choice within it matters little.
 
-For both collections, the tuned settings outperformed on the 400 held-out queries both the common textbook values
-($k_1 = 1.2$, $b = 0.75$)~\cite[Sec.~11.4.3]{manning2008irbook} and the default of the Anserini toolkit~\cite{yang2017anserini}
-($k_1 = 0.9$, $b = 0.4$), as used by Kamphuis et al.~\cite{kamphuis2020bm25}. 
-(Table~\ref{tab:heldout}), so the selected 
+For both collections, the tuned settings outperformed both the common
+textbook values ($k_1 = 1.2$, $b = 0.75$)~\cite[Sec.~11.4.3]{manning2008irbook}
+and the default of the Anserini toolkit~\cite{yang2017anserini}
+($k_1 = 0.9$, $b = 0.4$), as used by Kamphuis et al.~\cite{kamphuis2020bm25},
+on the 400 held-out queries (Table~\ref{tab:heldout}), so the selected
 parameters generalize beyond the queries used to choose them. The choice is also robust to 
 the target metric: tuning for nDCG or MRR instead selected the same setting for papers, and 
 tuning for MRR on a separate sample of 1,000 Train queries selected the same setting for 
@@ -424,7 +426,7 @@ $i = 1, 2, \dots$,
   \mathrm{nDCG@}k = \frac{\mathrm{DCG@}k}{\mathrm{IDCG@}k},
   \label{eq:ndcg}
 \end{equation}
-where IDCG @ $k$ is the DCG of an ideal ranking of the judged
+where $\mathrm{IDCG@}k$ is the DCG of an ideal ranking of the judged
 documents~\cite{jarvelin2002cumulated}; nDCG without a cutoff uses the
 full top 100. MRR is the mean over queries of $1 / r$, where $r$ is the
 rank of the first relevant document (0 if none is retrieved), and P@$k$
@@ -453,13 +455,15 @@ and manual annotation (Section~\ref{sec:annotation}).
 
 \subsection{Search Interface}
 \label{sec:interface}
-We developed a web-based search interface that lets users interact with the paper retrieval system. 
-The interface uses a React frontend connected to a Python FastAPI through HTTP endpoints. 
-At startup, the backend loads the previously constructed paper index and then initializes the 
-BM25 and TF-IDF retrieval models using the tuned parameters described in Section 2.3 and Section 2.4 ($k_1 = 4.0$, $b = 0.75$). 
-Search queries use the same preprocessing configuration as the indexed documents. 
-We did this to try to keep consistency between query terms and index vocabulary. 
-The backend then retrieves and returns the top-ranked papers, which are seen in the interface. 
+We developed a web-based search interface that lets users interact with the retrieval system. 
+The interface uses a React frontend connected to a FastAPI backend through HTTP endpoints. 
+At startup, the backend loads the paper index and initializes BM25 with the tuned parameters 
+from Section~\ref{sec:bm25}; TF-IDF and the paragraph index are loaded on first use, so either 
+model can be used on either collection.
+Search queries use the same preprocessing configuration as the indexed documents, so that 
+query terms match the index vocabulary.
+The backend then retrieves and returns the top-ranked documents, which are seen in the interface 
+(Figure~\ref{fig:search-interface}). 
 
 To present search results, we generate a separate metadata file which has paper identifiers, 
 titles, publication information, and abstracts. Because the original abstract fields can contain extraction problems, 
@@ -470,51 +474,50 @@ to provide excerpts that better reflect the relevance of each result.
 
 \subsubsection{Design Criteria}
 Our design follows the search interface guidelines discussed in
-class~\cite{hearst2009search}.\
+class~\cite{hearst2009search}.
 
 \emph{Efficient and informative feedback:} BM25 ranks a query in about
 9~ms on papers and 74~ms on paragraphs (Section~\ref{sec:efficiency}).
 Each result shows an excerpt chosen to contain query terms, with matches
 highlighted, so users can judge relevance without opening the document,
-and the vocabulary panel shows which query terms were used for retrieval.\
+and the vocabulary panel shows which query terms were used for retrieval.
 
 \emph{Balancing user control with automated actions:} users can toggle
 the highlighting of individual terms, choose the retrieval model and
 collection in Settings, filter results by document type and date, and
-clear their search history by query, by date, or entirely.\
+clear their search history by query, by date, or entirely.
 
 \emph{Reducing short-term memory load:} search history and named
 collections let users return to earlier queries and documents, and title
-autocomplete means users need not recall a paper's exact title. \
+autocomplete means users need not recall a paper's exact title. 
 
 \emph{Providing shortcuts:} documents can be previewed inline from both
-the results and Collections pages without leaving the current view. \
+the results and Collections pages without leaving the current view. 
 
 \emph{Simple, consistent design:} results appear ten per page in a fixed
 layout of title and excerpt, keeping the page easy to scan.
 
 \subsubsection{Interface Features}
-Our interface supports a variety of features including: vocabulary highlighting, title autocomplete, 
+Our interface supports a variety of features including vocabulary highlighting, title autocomplete, 
 document previewing, document bookmarking, search history, and settings.
 
 The search feature works in conjunction with vocabulary highlighting and title autocomplete.
-Query terms are displayed in their original readable forms, excluding stopwords. 
-The interface shows the orginal words rather than the stems thar are used interally.
-Matching terms are highlighted in yellow result excerpts, and users can toggle individual highlights. 
+Query terms are displayed in their original form, excluding stopwords, rather than as the stems used internally.
+Matching terms are highlighted in yellow in result excerpts, and users can toggle individual highlights. 
 As a user types, autocomplete suggests paper titles containing the entered text. 
-To reduce repeated string processing, we cache the lowercase versions of paper titles when the backend starts. It also only loads the paper index at first and the paragraph index is loaded lazily on the first paragraph cache.
-These features are exposed through the \texttt{/api/search}, \texttt{/api/vocabulary}, and \texttt{/api/suggest} endpoints
-The \texttt{/api/health} endpoint is used to verify backend availability. 
+To reduce repeated string processing, we cache the lowercase versions of paper titles when the backend starts. 
+These features are exposed through the \texttt{/api/search}, \texttt{/api/vocabulary}, and \texttt{/api/suggest} endpoints.
+The \texttt{/api/health} endpoint is used to verify backend availability.
 
 Users can bookmark retrieved documents to customized, named collections for future reference, with each collection supporting up to 100 documents. From the dedicated Collections page, users can manage their saved items, allowing for the easy removal of individual documents or entire collection folders.
 
-Additionally, an interactive document preview capability is accessible directly from both the Search Results and Collections pages, enabling quick inline inspection of document content.
+Additionally, an interactive document preview capability is accessible directly from both the Search Results and Collections pages, enabling quick inline inspection of document content (Figure~\ref{fig:document-preview}).
 
 \begin{figure}[t]
     \centering
     \includegraphics[width=\columnwidth]{figures/document_preview.png}
     \caption{Overview of the document preview.}
-    \label{fig:search-interface1}
+    \label{fig:document-preview}
 \end{figure}
 
 The system maintains a comprehensive record of previous search queries. Similar to collection management, users retain full control over their data and can clear their history by individual query, by specific dates, or in its entirety.
@@ -601,7 +604,7 @@ judgments rather than retrieval failure alone.
     per-difficulty columns are nDCG@5 and were not tested separately.}
   \label{tab:tuning-study}
   \small
-  \setlength{\tabcolsep}{4pt}
+  \setlength{\tabcolsep}{3pt}
   \begin{tabular}{lrrrrrr}
     \toprule
     & & & & \multicolumn{3}{c}{nDCG@5 by difficulty} \\
@@ -867,15 +870,15 @@ We built IR-Rangers, a retrieval system for arXiv papers and paragraphs, and com
 with BM25 over shared preprocessing and indexes. BM25 significantly outperformed TF-IDF on 
 both tasks, an advantage that did not depend on tuning or preprocessing and that we traced 
 to how the two models weight rare terms, repeated terms, and document length in their 
-scoring algorithms. Tuning showed that papers and paragraphs need very different parameters, 
+scoring functions. Tuning showed that papers and paragraphs need very different parameters, 
 and our ablation showed that the best preprocessing choice, particularly stemming, depends on the 
 collection and model.
 
 Our analysis also exposed the limits of exact term matching. Hard queries that paraphrase technical 
-fail, especially for paragraphs, although our manual judgments indicate that incomplete official 
+terminology fail, especially for paragraphs, although our manual judgments indicate that incomplete official 
 judgments understate performance on them. Future work includes semantic retrieval models that 
 can bridge such paraphrases, which the next phases of this project will explore; choosing preprocessing 
-per collection; evaluating BM25 variants designed for long documents; and storing index as compact 
+per collection; evaluating BM25 variants designed for long documents; and storing indexes as compact 
 arrays to reduce memory use and startup time.
 
 \bibliographystyle{ACM-Reference-Format}
