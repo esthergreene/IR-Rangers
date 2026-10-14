@@ -210,7 +210,7 @@ document vectors.
 
 
 \subsubsection{Scoring Function}
-The weight of term t in document d uses logarithmic term frequency
+The weight of term $t$ in document $d$ uses logarithmic term frequency
 and base-10 logarithms:
 \begin{equation}
   w_{t,d} = \bigl(1 + \log_{10} \mathit{tf}_{t,d}\bigr) \cdot \mathit{idf}_t,
@@ -218,7 +218,7 @@ and base-10 logarithms:
   \mathit{idf}_t = \log_{10} \frac{N}{\mathit{df}_t}.
   \label{eq:tfidf-weight}
 \end{equation}
-Query weights wt,q are computed the same way from the number of
+Query weights $w_{t,q}$ are computed the same way from the number of
 times t occurs in the query. A document's score is the cosine of the
 angle between the two weight vectors:
 \begin{equation}
@@ -246,7 +246,7 @@ all postings. At query time, the query, preprocessed as in
 Section~\ref{sec:preprocessing}, is weighted as above, skipping terms
 that are absent from the index or have zero IDF. For each remaining
 term, a Python loop walks its postings and accumulates
-wt,qwt,d for each document; the sums are then divided by the
+$w_{t,q}, w_{t,d}$ for each document; the sums are then divided by the
 norms. The top 100 documents are selected with a heap, with ties broken
 by internal document number, as for BM25.
 
@@ -414,15 +414,15 @@ $i = 1, 2, \dots$,
   \mathrm{nDCG@}k = \frac{\mathrm{DCG@}k}{\mathrm{IDCG@}k},
   \label{eq:ndcg}
 \end{equation}
-where IDCG@k is the DCG of an ideal ranking of the judged
+where IDCG @ $k$ is the DCG of an ideal ranking of the judged
 documents~\cite{jarvelin2002cumulated}; nDCG without a cutoff uses the
-full top 100. MRR is the mean over queries of 1/r, where r is the
-rank of the first relevant document (0 if none is retrieved), and P@k
-is the fraction of the top k documents that are relevant. Documents
+full top 100. MRR is the mean over queries of $1 / r$, where $r$ is the
+rank of the first relevant document (0 if none is retrieved), and P@$k$
+is the fraction of the top $k$ documents that are relevant. Documents
 absent from the judgments count as non-relevant.
 
 
-nDCG uses the relevance grades directly as gains. For MRR and P@k, we
+nDCG uses the relevance grades directly as gains. For MRR and P@$k$, we
 report two variants: a lenient one, in which documents of grade 1 or 2
 count as relevant, and, for MRR and P@5, a strict one, in which only
 grade-2 documents do. Queries without any grade-2 document are excluded
@@ -431,7 +431,7 @@ Study queries.
 
 
 We test differences between runs with a two-sided paired Student's
-t-test over queries at p<0.05, using ranx. We apply it to BM25
+t-test over queries at $p < 0.05$, using ranx. We apply it to BM25
 versus TF-IDF on each collection, to tuned versus default BM25
 parameters, and to the preprocessing settings compared in
 Section~\ref{sec:ablation}. The three query sets serve distinct
@@ -443,15 +443,58 @@ and manual annotation (Section~\ref{sec:annotation}).
 
 \subsection{Search Interface}
 \label{sec:interface}
-We developed a web-based search interface that lets users interact with the paper retrieval system. The interface uses a React frontend connected to a Python FastAPI through HTTP endpoints. At startup, the backend loads the previously constructed paper index and then initializes the BM25 retrieval model using the tuned parameters described in Section 2.4 ($k_1 = 4.0$, $b = 0.75$). Search queries use the same preprocessing configuration as the indexed documents. We did this to try to keep consistency between query terms and index vocabulary. The backend then retrieves and returns the top-ranked papers, which are seen in the interface. 
+We developed a web-based search interface that lets users interact with the paper retrieval system. 
+The interface uses a React frontend connected to a Python FastAPI through HTTP endpoints. 
+At startup, the backend loads the previously constructed paper index and then initializes the 
+BM25 and TF-IDF retrieval models using the tuned parameters described in Section 2.3 and Section 2.4 ($k_1 = 4.0$, $b = 0.75$). 
+Search queries use the same preprocessing configuration as the indexed documents. 
+We did this to try to keep consistency between query terms and index vocabulary. 
+The backend then retrieves and returns the top-ranked papers, which are seen in the interface. 
 
-To present search results, we generate a separate metadata file which has paper identifiers, titles, publication information, and abstracts. Because the original abstract fields can contain extraction problems, the metadata generation process looks to prioritize the first paragraph of each paper. This is because we generally see a cleaner version of the abstract. Search results display paper titles alongside excerpts selected from their abstracts. So rather than truncating abstracts at a fixed character position, our backend identifies sentences containing query terms to provide excerpts that better reflect the relevance of each result. 
+To present search results, we generate a separate metadata file which has paper identifiers, 
+titles, publication information, and abstracts. Because the original abstract fields can contain extraction problems, 
+the metadata generation process looks to prioritize the first paragraph of each paper. This is because we generally 
+see a cleaner version of the abstract. Search results display paper titles alongside excerpts selected from their abstracts. 
+So rather than truncating abstracts at a fixed character position, our backend identifies sentences containing query terms 
+to provide excerpts that better reflect the relevance of each result. 
+
+\subsubsection{Design Criteria}
+Our design follows the search interface guidelines discussed in
+class~\cite{hearst2009search}.\
+
+\emph{Efficient and informative feedback:} BM25 ranks a query in about
+9~ms on papers and 74~ms on paragraphs (Section~\ref{sec:efficiency}).
+Each result shows an excerpt chosen to contain query terms, with matches
+highlighted, so users can judge relevance without opening the document,
+and the vocabulary panel shows which query terms were used for retrieval.\
+
+\emph{Balancing user control with automated actions:} users can toggle
+the highlighting of individual terms, choose the retrieval model and
+collection in Settings, filter results by document type and date, and
+clear their search history by query, by date, or entirely.\
+
+\emph{Reducing short-term memory load:} search history and named
+collections let users return to earlier queries and documents, and title
+autocomplete means users need not recall a paper's exact title. \
+
+\emph{Providing shortcuts:} documents can be previewed inline from both
+the results and Collections pages without leaving the current view. \
+
+\emph{Simple, consistent design:} results appear ten per page in a fixed
+layout of title and excerpt, keeping the page easy to scan.
 
 \subsubsection{Interface Features}
-Our interface supports a variety of features including: vocabulary highlighting, title autocomplete, document previewing, document bookmarking, search history, and settings.
+Our interface supports a variety of features including: vocabulary highlighting, title autocomplete, 
+document previewing, document bookmarking, search history, and settings.
 
-The search feature works in conjunction with vocabulary highlighting and title autocomplete
-Query terms are displayed in their original readable forms, excluding stopwords. We did this in regard to stems used internally for retrieval. Matching terms are highlighted in (yellow) result excerpts, and users can toggle individual highlights. As a user types, autocomplete suggests paper titles containing the entered text. To reduce repeated string processing, we cache the lowercase versions of paper titles when the backend starts. These features are exposed through the /api/search, /api/vocabulary, and /api/suggest endpoints. This is in addition to the /api/health endpoint used to verify backend availability. 
+The search feature works in conjunction with vocabulary highlighting and title autocomplete.
+Query terms are displayed in their original readable forms, excluding stopwords. 
+The interface shows the orginal words rather than the stems thar are used interally.
+Matching terms are highlighted in yellow result excerpts, and users can toggle individual highlights. 
+As a user types, autocomplete suggests paper titles containing the entered text. 
+To reduce repeated string processing, we cache the lowercase versions of paper titles when the backend starts. 
+These features are exposed through the \texttt{/api/search}, \texttt{/api/vocabulary}, and \texttt{/api/suggest} endpoints
+The \texttt{/api/health} endpoint is used to verify backend availability. 
 
 Users can bookmark retrieved documents to customized, named collections for future reference, with each collection supporting up to 100 documents. From the dedicated Collections page, users can manage their saved items, allowing for the easy removal of individual documents or entire collection folders.
 
@@ -461,7 +504,7 @@ Additionally, an interactive document preview capability is accessible directly 
     \centering
     \includegraphics[width=\columnwidth]{figures/document_preview.png}
     \caption{Overview of the document preview.}
-    \label{fig:search-interface}
+    \label{fig:search-interface1}
 \end{figure}
 
 The system maintains a comprehensive record of previous search queries. Similar to collection management, users retain full control over their data and can clear their history by individual query, by specific dates, or in its entirety.
