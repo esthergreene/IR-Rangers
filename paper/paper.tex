@@ -30,7 +30,7 @@
 \email{nathaniel.serrano@maine.edu}
 
 \begin{abstract}
-  ...
+This project presents IR-Rangers, an information retrieval system for searching a collection of arXiv research papers. The system uses text preprocessing and inverted indexing to support document retrieval at both the paper and paragraph levels. We implemented and evaluated TF-IDF and BM25 ranking approaches using relevance judgments and standard information retrieval evaluation metrics. We also developed a web-based search interface using React and FastAPI, allowing users to submit queries, view ranked research papers, explore relevant vocabulary, and receive title-based autocomplete suggestions. Through this project, we examined the effectiveness of traditional retrieval techniques and integrated indexing, ranking, evaluation, and user interface components into a functional research paper search system.
 \end{abstract}
 
 \keywords{information retrieval, BM25, TF-IDF, scientific document
@@ -358,11 +358,11 @@ paragraphs. We compare tuned and default parameters on the Study queries in Sect
 
 \subsection{Search Interface}
 \label{sec:interface}
-We developed a web-based search interface that lets users interact with the paper retrieval system. The interface uses a REACT frontend connected to a Python FastAPI through HTTP endpoints. At startup, the backend loads the previously constructed paper index and then initializes the BM25 retrieval model using the tuned parameters described in Section 2.4 ($k_1 = 4.0$, $b = 0.75$). Search queries use the same preprocessing configuration as the indexed documents. We did this to try to keep consistency between query terms and index vocabulary. The backend then retrieves and returns the top-ranked papers, which are seen in the interface. 
+We developed a web-based search interface that lets users interact with the paper retrieval system. The interface uses a React frontend connected to a Python FastAPI through HTTP endpoints. At startup, the backend loads the previously constructed paper index and then initializes the BM25 retrieval model using the tuned parameters described in Section 2.4 ($k_1 = 4.0$, $b = 0.75$). Search queries use the same preprocessing configuration as the indexed documents. We did this to try to keep consistency between query terms and index vocabulary. The backend then retrieves and returns the top-ranked papers, which are seen in the interface. 
 
 To present search results, we generate a separate metadata file which has paper identifiers, titles, publication information, and abstracts. Because the original abstract fields can contain extraction problems, the metadata generation process looks to prioritize the first paragraph of each paper. This is because we generally see a cleaner version of the abstract. Search results display paper titles alongside excerpts selected from their abstracts. So rather than truncating abstracts at a fixed character position, our backend identifies sentences containing query terms to provide excerpts that better reflect the relevance of each result. 
 
-The interface also supports vocabulary highlighting and title autocomplete. Query terms are displayed in their original readable forms, excluding stopwords. We did this in regard to stems used internally for retrieval. Matching terms are highlighted in (yellow) result excerpts, and users can toggle individual highlights. As a user types, autocomplete suggests paper titles containing the entered text. To reduce repeated string processing, we cache the lowercase versions of paper titles when the backend starts. These features are exposed through the /api/search, /api/vocabulary, and /api/suggest endpoints. This is in addition to /api/health endoint used to verify backend availability. 
+The interface also supports vocabulary highlighting and title autocomplete. Query terms are displayed in their original readable forms, excluding stopwords. We did this in regard to stems used internally for retrieval. Matching terms are highlighted in (yellow) result excerpts, and users can toggle individual highlights. As a user types, autocomplete suggests paper titles containing the entered text. To reduce repeated string processing, we cache the lowercase versions of paper titles when the backend starts. These features are exposed through the /api/search, /api/vocabulary, and /api/suggest endpoints. This is in addition to /api/health endpoint used to verify backend availability. 
 
 \begin{figure}[t]
     \centering
@@ -707,6 +707,11 @@ for long papers under cosine normalization, conflated stems (e.g., ``generat'' f
 and dilute term weights. Even without stemming, however, TF-IDF remains far below 
 BM25 (Section~\ref{sec:why-bm25})
 \section{Conclusion}
+In this project we developed IR-Rangers, an information retrieval system designed to search a collection of arXiv research papers. Our system uses text preprocessing, inverted indexing, and two retrieval approaches, TF-IDF and BM25, to rank documents based on user queries. We explored both paper-level and paragraph-level document data and evaluated retrieval effectiveness using relevance judgments and ranking metrics. 
+
+We also developed a web-based search interface using React and FastAPI. The interface lets users search for research papers, view ranked results, explore relevant vocabulary, and get title suggestions as they type. These features were designed to make the retrieval system more accessible and easier to use. 
+
+Our system demonstrates how traditional information retrieval techniques can support research paper search. Keeping this in mind, we admit there are opportunities for improvement. Future work might include exploring additional ranking methods, improving query suggestions, and expanding the search interface to support paragraph-level retrieval. Overall, this project provided practical experience in building, evaluating, and integrating the components of an information retrieval system. 
 
 \bibliographystyle{ACM-Reference-Format}
 \bibliography{references}
