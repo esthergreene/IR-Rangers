@@ -12,10 +12,25 @@ export interface SearchResult {
   excerpt: string
 }
 
+export interface DocumentPreview {
+  id: string
+  title: string
+  type: string
+  source: string
+  year: number
+  content: string
+}
+
 export interface SearchResponse {
   query: string
   results: SearchResult[]
+  total: number
+  model: SearchModel
+  collection: SearchCollection
 }
+
+export type SearchModel = 'bm25' | 'tfidf'
+export type SearchCollection = 'paper' | 'paragraph'
 
 export interface VocabularyTerm {
   term: string
@@ -36,7 +51,15 @@ export interface VocabularyGroup {
  */
 export interface SearchApi {
   /** `terms` are the related terms and keywords that are switched on. */
-  search(query: string, terms: string[]): Promise<SearchResponse>
+  search(
+    query: string,
+    terms: string[],
+    page: number,
+    pageSize: number,
+    model: SearchModel,
+    collection: SearchCollection,
+  ): Promise<SearchResponse>
+  preview(id: string, collection: SearchCollection): Promise<DocumentPreview>
   vocabulary(query: string): Promise<VocabularyGroup[]>
   suggest(text: string): Promise<string[]>
 }

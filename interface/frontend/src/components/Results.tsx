@@ -7,7 +7,7 @@ export type SearchState =
   | { status: 'idle' }
   | { status: 'loading'; query: string }
   | { status: 'done'; query: string; results: SearchResult[] }
-  | { status: 'error'; query: string }
+  | { status: 'error'; query: string; message: string }
 
 export interface HighlightOptions {
   /** Matches every term that currently has a highlight span (see `buildMatcher`). */
@@ -24,32 +24,36 @@ const cssVars = (vars: Record<`--${string}`, string>) => vars as CSSProperties
 interface ResultsHeadProps {
   search: SearchState
   shown: number
+  pageTotal: number
   total: number
   sampleData: boolean
   onClearFilters(): void
 }
 
-export function ResultsHead({ search, shown, total, sampleData, onClearFilters }: ResultsHeadProps) {
+export function ResultsHead({ search, shown, pageTotal, total, sampleData, onClearFilters }: ResultsHeadProps) {
   let content: ReactNode = null
   if (search.status === 'loading') {
     content = <p className="text-[15px] text-graphite">Searching…</p>
   } else if (search.status === 'done') {
-    const filtered = shown !== total
+    const filtered = shown !== pageTotal
     const noun = total === 1 ? 'result' : 'results'
     content = (
       <>
         <p className="text-[15px] text-graphite">
-          <strong className="font-semibold text-ink">{filtered ? `${shown} of ${total} ${noun}` : `${total} ${noun}`}</strong>
+          <strong className="font-semibold text-ink">{total} {noun}</strong>
           {` for “${search.query}”`}
           {filtered && (
-            <TextButton className="ml-1.5" onClick={onClearFilters}>
-              Clear filters
-            </TextButton>
+            <>
+              <span className="ml-1.5">{`(${shown} shown on this page)`}</span>
+              <TextButton className="ml-1.5" onClick={onClearFilters}>
+                Clear filters
+              </TextButton>
+            </>
           )}
         </p>
         {sampleData && (
           <span
-            title="Every query returns these sample results. Turn off sample data in the menu to use the backend."
+            title="These are demonstration results, not actual retrieval. Change the model or collection in Settings to run the query against the backend."
             className="rounded-full border border-rule-strong px-2.5 py-0.5 text-[12.5px] whitespace-nowrap text-graphite"
           >
             Sample data
@@ -85,7 +89,7 @@ export function ResultList({ ref, search, shown, sampleData, highlight, onOpenDo
     content = <EmptyState title="Enter a query to search the collection." body="Results appear here, with related terms highlighted." />
   } else if (search.status === 'error') {
     content = (
-      <EmptyState title="Search didn't respond." body="Check the connection and search again.">
+      <EmptyState title="Search didn't respond." body={search.message}>
         {!sampleData && <Button onClick={onUseSampleData}>Use sample data instead</Button>}
       </EmptyState>
     )
@@ -116,20 +120,24 @@ const ROW = 'grid grid-cols-[44px_minmax(0,1fr)] gap-x-5 rounded-row border bord
 
 function ResultRow({ result, index, highlight, onOpen }: { result: SearchResult; index: number; highlight: HighlightOptions; onOpen(result: SearchResult): void }) {
   return (
-    <li className={ROW} style={cssVars({ '--d': `${index * 90}ms` })}>
+    <li
+      role="link"
+      tabIndex={0}
+      aria-label={`Preview document: ${result.title}`}
+      className={`${ROW} group cursor-pointer focus-visible:outline-2 focus-visible:outline-focus`}
+      style={cssVars({ '--d': `${index * 90}ms` })}
+      onClick={() => onOpen(result)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          onOpen(result)
+        }
+      }}
+    >
       <DocIcon format={result.format} />
       <div>
-        <h2 className="text-[17px] leading-[1.3] font-semibold max-sm:text-[16px]">
-          <a
-            href="#"
-            className="hover:underline hover:decoration-1 hover:underline-offset-3"
-            onClick={(e) => {
-              e.preventDefault()
-              onOpen(result)
-            }}
-          >
-            {result.title}
-          </a>
+        <h2 className="text-[17px] leading-[1.3] font-semibold group-hover:underline group-hover:decoration-1 group-hover:underline-offset-3 max-sm:text-[16px]">
+          {result.title}
         </h2>
         <p className="mt-1.5 max-w-[68ch] font-serif text-[16px] leading-[1.62] text-ink-2 max-sm:text-[15.5px]">
           <HighlightedText text={result.excerpt} {...highlight} />

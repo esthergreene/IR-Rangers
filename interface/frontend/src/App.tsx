@@ -1,9 +1,20 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { SAMPLE_QUERY, getSearchApi, type SearchResult } from "./api";
+import {
+  SAMPLE_QUERY,
+  getSearchApi,
+  type SearchCollection,
+  type DocumentPreview as DocumentPreviewData,
+  type SearchModel,
+  type SearchResult,
+} from "./api";
+import CollectionsPage from "./collections";
 import { Drawer } from "./components/Drawer";
+import type { DrawerPage } from "./components/Drawer";
 import { FilterButton, FilterPanel } from "./components/Filters";
 import { MenuIcon } from "./components/icons";
+import { Button } from "./components/buttons";
+import { DocumentPreview } from "./components/DocumentPreview";
 import {
   ResultList,
   ResultsHead,
@@ -15,8 +26,12 @@ import { Toast } from "./components/Toast";
 import { VocabBar, VocabPanel } from "./components/Vocabulary";
 import { useHighlightSweep } from "./hooks/useHighlightSweep";
 import { useSampleDataSetting } from "./hooks/useSampleDataSetting";
+import { useSearchHistory } from "./hooks/useSearchHistory";
+import { useSearchPreferences } from "./hooks/useSearchPreferences";
 import { useToast } from "./hooks/useToast";
 import { useVocabulary } from "./hooks/useVocabulary";
+import SearchHistoryPage from "./history";
+import SettingsPage from "./settings";
 import {
   DEFAULT_FILTERS,
   activeFilterCount,
@@ -30,11 +45,15 @@ const ROW =
   "grid grid-cols-[var(--gutter)_minmax(0,1fr)_var(--gutter)] items-start gap-x-(--gap)";
 
 const NO_RESULTS: SearchResult[] = [];
+const PAGE_SIZE = 10;
+const PAGE_BUTTON_COUNT = 5;
 
 type Panel = "vocab" | "filters" | null;
 
 export default function App() {
   const [sampleData, setSampleData] = useSampleDataSetting();
+  const { model, setModel, collection, setCollection } = useSearchPreferences();
+  const history = useSearchHistory();
   const api = getSearchApi(sampleData);
 
   const [query, setQuery] = useState(() => (sampleData ? SAMPLE_QUERY : ""));
@@ -43,9 +62,17 @@ export default function App() {
       ? { status: "loading", query: SAMPLE_QUERY }
       : { status: "idle" },
   );
+  const [currentPage, setCurrentPage] = useState(1);
+  const [resultTotal, setResultTotal] = useState(0);
+  const [activePage, setActivePage] = useState<DrawerPage>("Search");
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [panel, setPanel] = useState<Panel>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [documentPreview, setDocumentPreview] = useState<{
+    status: "loading" | "done" | "error";
+    document: DocumentPreviewData | null;
+    error: string | null;
+  } | null>(null);
   const vocab = useVocabulary();
   const highlights = useHighlightSweep();
   const toast = useToast();
@@ -57,6 +84,7 @@ export default function App() {
   const vocabPanelRef = useRef<HTMLDivElement>(null);
   const resultsRef = useRef<HTMLOListElement>(null);
   const searchSeq = useRef(0);
+  const previewSeq = useRef(0);
 
   const drawerId = useId();
   const vocabPanelId = useId();
@@ -64,21 +92,39 @@ export default function App() {
 
   /* ---------- Search ---------- */
 
-  function runSearch(raw: string, useSampleData = sampleData) {
+  function runSearch(
+    raw: string,
+    useSampleData = sampleData,
+    useModel: SearchModel = model,
+    useCollection: SearchCollection = collection,
+    recordHistory = true,
+  ) {
     const q = normalize(raw);
     closeFilters();
     if (!q) {
       searchSeq.current++;
       setSearch({ status: "idle" });
+      setCurrentPage(1);
+      setResultTotal(0);
       inputRef.current?.focus();
       return;
     }
+    if (recordHistory) history.add(q);
+    setCurrentPage(1);
+    setResultTotal(0);
     setSearch({ status: "loading", query: q });
-    loadResults(q, useSampleData);
+    loadResults(q, useSampleData, 1, useModel, useCollection);
   }
 
   /** Fetches results and related vocabulary for `q`. Only the newest request gets to update state. */
-  async function loadResults(q: string, useSampleData: boolean) {
+  async function loadResults(
+    q: string,
+    useSampleData: boolean,
+    page: number,
+    useModel: SearchModel,
+    useCollection: SearchCollection,
+    refreshVocabulary = true,
+  ) {
     const seq = ++searchSeq.current;
     const source = getSearchApi(useSampleData);
     try {
@@ -86,22 +132,49 @@ export default function App() {
         source.search(
           q,
           vocab.activeTerms.map((t) => t.label),
+          page,
+          PAGE_SIZE,
+          useModel,
+          useCollection,
         ),
-        source.vocabulary(q).catch(() => []),
+        refreshVocabulary
+          ? source.vocabulary(q).catch(() => [])
+          : Promise.resolve(null),
       ]);
       if (seq !== searchSeq.current) return;
-      vocab.load(groups);
+      if (groups !== null) vocab.load(groups);
       setSearch({ status: "done", query: q, results: response.results ?? [] });
+      setCurrentPage(page);
+      setResultTotal(response.total);
       highlights.sweepIn("all");
-    } catch {
+    } catch (error) {
       if (seq !== searchSeq.current) return;
-      setSearch({ status: "error", query: q });
+      setSearch({
+        status: "error",
+        query: q,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Check the connection and search again.",
+      });
     }
+  }
+
+  function goToPage(page: number) {
+    if (
+      search.status !== "done" ||
+      page < 1 ||
+      page > pageCount ||
+      page === currentPage
+    )
+      return;
+    setSearch({ status: "loading", query: search.query });
+    loadResults(search.query, sampleData, page, model, collection, false);
   }
 
   // With sample data on, the page opens with the sample query already searched.
   useEffect(() => {
-    if (sampleData) loadResults(SAMPLE_QUERY, true);
+    if (sampleData) loadResults(SAMPLE_QUERY, true, 1, model, collection);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- first load only
   }, []);
 
@@ -109,11 +182,52 @@ export default function App() {
     setSampleData(useSampleData);
     const lastQuery = search.status === "idle" ? "" : search.query;
     if (lastQuery) {
-      runSearch(lastQuery, useSampleData);
+      runSearch(lastQuery, useSampleData, model, collection, false);
     } else if (useSampleData) {
       setQuery(SAMPLE_QUERY);
-      runSearch(SAMPLE_QUERY, true);
+      runSearch(SAMPLE_QUERY, true, model, collection, false);
     }
+  }
+
+  function changeModel(nextModel: SearchModel) {
+    setModel(nextModel);
+    if (sampleData) setSampleData(false);
+    if (search.status !== "idle") {
+      runSearch(search.query, false, nextModel, collection, false);
+    }
+  }
+
+  function changeCollection(nextCollection: SearchCollection) {
+    setCollection(nextCollection);
+    if (sampleData) setSampleData(false);
+    if (search.status !== "idle") {
+      runSearch(search.query, false, model, nextCollection, false);
+    }
+  }
+
+  async function openDocumentPreview(result: SearchResult) {
+    const seq = ++previewSeq.current;
+    setDocumentPreview({ status: "loading", document: null, error: null });
+    try {
+      const document = await getSearchApi(sampleData).preview(result.id, collection);
+      if (seq !== previewSeq.current) return;
+      setDocumentPreview({ status: "done", document, error: null });
+    } catch (error) {
+      if (seq !== previewSeq.current) return;
+      setDocumentPreview({
+        status: "error",
+        document: null,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Could not load the document preview.",
+      });
+    }
+  }
+
+  function closeDocumentPreview() {
+    previewSeq.current++;
+    setDocumentPreview(null);
   }
 
   /* ---------- Vocabulary ---------- */
@@ -191,6 +305,18 @@ export default function App() {
   /* ---------- Render ---------- */
 
   const results = search.status === "done" ? search.results : NO_RESULTS;
+  const pageCount = Math.ceil(resultTotal / PAGE_SIZE);
+  const firstPage = Math.max(
+    1,
+    Math.min(
+      currentPage - Math.floor(PAGE_BUTTON_COUNT / 2),
+      pageCount - PAGE_BUTTON_COUNT + 1,
+    ),
+  );
+  const pageNumbers = Array.from(
+    { length: Math.min(PAGE_BUTTON_COUNT, pageCount) },
+    (_, index) => firstPage + index,
+  );
   const shown = useMemo(
     () => results.filter(passes(filters)),
     [results, filters],
@@ -216,8 +342,9 @@ export default function App() {
         inert={drawerOpen}
         className="mx-auto max-w-[988px] px-5 pt-9 pb-[72px] [--gap:16px] [--gutter:48px] max-sm:px-3 max-sm:pt-4 max-sm:pb-14 max-sm:[--gap:8px] max-sm:[--gutter:40px]"
       >
-        <h1 className="sr-only">Document search</h1>
-
+        {activePage === "Search" && (
+          <h1 className="sr-only">Document search</h1>
+        )}
         <header className={ROW}>
           <button
             ref={menuButtonRef}
@@ -231,94 +358,206 @@ export default function App() {
             <MenuIcon />
           </button>
 
-          <SearchBox
-            value={query}
-            onValueChange={setQuery}
-            onEdit={() => setPanel(null)}
-            onSubmit={(q) => runSearch(q)}
-            suggest={api.suggest}
-            inputRef={inputRef}
-            fieldEnd={
-              <FilterButton
-                ref={filterButtonRef}
-                panelId={filterPanelId}
-                open={panel === "filters"}
-                activeCount={activeFilterCount(filters)}
-                onClick={() =>
-                  setPanel((p) => (p === "filters" ? null : "filters"))
-                }
-              />
-            }
-          >
-            <VocabBar
-              ref={vocabBarRef}
-              panelId={vocabPanelId}
-              open={panel === "vocab"}
-              terms={vocab.activeTerms}
-              onClick={() => setPanel((p) => (p === "vocab" ? null : "vocab"))}
-            />
-            <VocabPanel
-              ref={vocabPanelRef}
-              id={vocabPanelId}
-              open={panel === "vocab"}
-              groups={vocab.groups}
-              active={vocab.active}
-              keywords={vocab.keywords}
-              onToggle={toggleTerm}
-              onAddKeyword={addKeyword}
-              onRemoveKeyword={removeKeyword}
-              onReset={() => highlights.sweepIn(vocab.reset())}
-              onClear={() =>
-                vocab.clear().forEach((key) => highlights.fadeOut(key))
+          {activePage === "Search" ? (
+            <SearchBox
+              value={query}
+              onValueChange={setQuery}
+              onEdit={() => setPanel(null)}
+              onSubmit={(q) => runSearch(q)}
+              suggest={api.suggest}
+              inputRef={inputRef}
+              fieldEnd={
+                <FilterButton
+                  ref={filterButtonRef}
+                  panelId={filterPanelId}
+                  open={panel === "filters"}
+                  activeCount={activeFilterCount(filters)}
+                  onClick={() =>
+                    setPanel((p) => (p === "filters" ? null : "filters"))
+                  }
+                />
               }
-              onDone={() => closeVocab(true)}
-            />
-            <FilterPanel
-              id={filterPanelId}
-              open={panel === "filters"}
-              applied={filters}
-              results={results}
-              anchorRef={filterButtonRef}
-              onApply={applyFilters}
-              onClose={() => closeFilters()}
-            />
-          </SearchBox>
+            >
+              <VocabBar
+                ref={vocabBarRef}
+                panelId={vocabPanelId}
+                open={panel === "vocab"}
+                terms={vocab.activeTerms}
+                onClick={() => setPanel((p) => (p === "vocab" ? null : "vocab"))}
+              />
+              <VocabPanel
+                ref={vocabPanelRef}
+                id={vocabPanelId}
+                open={panel === "vocab"}
+                groups={vocab.groups}
+                active={vocab.active}
+                keywords={vocab.keywords}
+                onToggle={toggleTerm}
+                onAddKeyword={addKeyword}
+                onRemoveKeyword={removeKeyword}
+                onClear={() =>
+                  vocab.clear().forEach((key) => highlights.fadeOut(key))
+                }
+                onDone={() => closeVocab(true)}
+              />
+              <FilterPanel
+                id={filterPanelId}
+                open={panel === "filters"}
+                applied={filters}
+                results={results}
+                anchorRef={filterButtonRef}
+                onApply={applyFilters}
+                onClose={() => closeFilters()}
+              />
+            </SearchBox>
+          ) : (
+            <h1 className="col-span-2 self-center text-[20px] font-semibold text-ink">
+              {activePage}
+            </h1>
+          )}
         </header>
 
-        <main className={ROW}>
-          <div className="col-2 min-w-0 max-sm:col-span-full">
-            <ResultsHead
-              search={search}
-              shown={shown.length}
-              total={results.length}
-              sampleData={sampleData}
-              onClearFilters={clearFilters}
-            />
-            <ResultList
-              ref={resultsRef}
-              search={search}
-              shown={shown}
-              sampleData={sampleData}
-              highlight={highlight}
-              onOpenDocument={() =>
-                toast.show("Document pages aren't connected yet.")
-              }
-              onClearFilters={clearFilters}
-              onUseSampleData={() => changeDataSource(true)}
-            />
-          </div>
-        </main>
+        {activePage === "Search" ? (
+          <>
+            <main className={ROW}>
+              <div className="col-2 min-w-0 max-sm:col-span-full">
+                <ResultsHead
+                  search={search}
+                  shown={shown.length}
+                  pageTotal={results.length}
+                  total={resultTotal}
+                  sampleData={sampleData}
+                  onClearFilters={clearFilters}
+                />
+                <ResultList
+                  ref={resultsRef}
+                  search={search}
+                  shown={shown}
+                  sampleData={sampleData}
+                  highlight={highlight}
+                  onOpenDocument={openDocumentPreview}
+                  onClearFilters={clearFilters}
+                  onUseSampleData={() => changeDataSource(true)}
+                />
+              </div>
+            </main>
+            {search.status === "done" && pageCount > 1 && (
+              <nav
+                aria-label="Search results pages"
+                className="flex flex-wrap items-center justify-center gap-2 pt-6"
+              >
+                <Button
+                  size="sm"
+                  disabled={currentPage === 1}
+                  aria-label="First Page"
+                  onClick={() => goToPage(1)}
+                >
+                  Start
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={currentPage === 1}
+                  aria-label="Previous page"
+                  onClick={() => goToPage(currentPage - 1)}
+                >
+                  Previous
+                </Button>
+                {pageNumbers.map((page) => (
+                  <Button
+                    key={page}
+                    size="sm"
+                    aria-label={`Page ${page}`}
+                    aria-current={page === currentPage ? "page" : undefined}
+                    className={
+                      page === currentPage
+                        ? "border-ink bg-hover-paper bg-slate-600"
+                        : ""
+                    }
+                    onClick={() => goToPage(page)}
+                  >
+                    {page}
+                  </Button>
+                ))}
+                <Button
+                  size="sm"
+                  disabled={currentPage === pageCount}
+                  aria-label="Next page"
+                  onClick={() => goToPage(currentPage + 1)}
+                >
+                  Next
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={currentPage === pageCount}
+                  aria-label="Last Page"
+                  onClick={() => goToPage(pageCount)}
+                >
+                  End
+                </Button>
+                <span
+                  className="ml-2 text-[13px] text-graphite"
+                  aria-live="polite"
+                >
+                  Page {currentPage} of {pageCount}
+                </span>
+              </nav>
+            )}
+          </>
+        ) : (
+          <main className="mx-auto mt-10 w-full max-w-3xl">
+            {activePage === "Collections" && <CollectionsPage />}
+            {activePage === "Search history" && (
+              <SearchHistoryPage
+                entries={history.entries}
+                onSearch={(previousQuery) => {
+                  setQuery(previousQuery);
+                  setActivePage("Search");
+                  runSearch(
+                    previousQuery,
+                    sampleData,
+                    model,
+                    collection,
+                    false,
+                  );
+                }}
+                onRemove={history.remove}
+                onClearDate={history.clearDate}
+                onClearAll={history.clearAll}
+              />
+            )}
+            {activePage === "Settings" && (
+              <SettingsPage
+                model={model}
+                collection={collection}
+                sampleData={sampleData}
+                onModelChange={changeModel}
+                onCollectionChange={changeCollection}
+                onSampleDataChange={changeDataSource}
+              />
+            )}
+          </main>
+        )}
       </div>
 
       <Drawer
         id={drawerId}
         open={drawerOpen}
+        currentPage={activePage}
         returnFocusRef={menuButtonRef}
         sampleData={sampleData}
         onSampleDataChange={changeDataSource}
-        onNavigate={(label) => toast.show(`“${label}” isn't connected yet.`)}
+        onNavigate={(page) => {
+          setPanel(null);
+          setActivePage(page);
+        }}
         onClose={() => setDrawerOpen(false)}
       />
+      {documentPreview && (
+        <DocumentPreview
+          preview={documentPreview}
+          onClose={closeDocumentPreview}
+        />
+      )}
       <Toast message={toast.message} visible={toast.visible} />
     </>
   );

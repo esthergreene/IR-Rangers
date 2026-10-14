@@ -86,7 +86,6 @@ interface VocabPanelProps {
   onToggle(key: string): void;
   onAddKeyword(label: string): void;
   onRemoveKeyword(key: string): void;
-  onReset(): void;
   onClear(): void;
   onDone(): void;
 }
@@ -101,7 +100,6 @@ export function VocabPanel({
   onToggle,
   onAddKeyword,
   onRemoveKeyword,
-  onReset,
   onClear,
   onDone,
 }: VocabPanelProps) {
@@ -215,9 +213,7 @@ export function VocabPanel({
           Terms that are on get added to your search and highlighted in the
           results.
         </p>
-        {/* CJ Notes: Add a button to clear all selected terms */}
         <div className="ml-auto flex items-center gap-3">
-          <TextButton onClick={onReset}>Reset to suggested</TextButton>
           <TextButton onClick={onClear}>Clear all selections</TextButton>
           <Button onClick={onDone}>Done</Button>
         </div>
