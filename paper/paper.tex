@@ -256,17 +256,18 @@ repeated in the query is processed once, with its contribution multiplied by its
 query frequency. After scoring, the top 100 documents are selected, with ties broken
 by internal document number so that runs are reproducible.
 
-Our first implementation accumulated scores in a Python loop over individual postings.
-It was correct but took about one second per query, so a full tuning grid (54 parameter
-settings for 1,600 queries on papers) would have required roughly a day of computation. 
-We therefore vectorized scoring with NumPy, so that only the loop over query terms remains 
-in Python. Each term's postings (its document numbers and term frequencies) are converted
-to arrays once and cached; the term's contributions to all documents in its postings are 
-then computed in one array operation and added to a dense score array indexed by document 
-number. The top 100 are found by partial selection rather than a full sort. This reduced 
-search time to milliseconds per query (Section~\ref{sec:efficiency}), so the full paper
-grid search ran in about eight minutes. The vectorized version produced the exact same
-evaluation metrics as the original on our tuning queries over the full index.
+Our first implementation accumulated scores in a Python loop over individual postings. 
+It was correct, but averaged 91~ms per query on papers and 1.08~s per query on paragraphs, 
+so a full paragraph tuning grid (48 parameter settings for 1,600 queries) would have required
+roughly a day of computation. We therefore vectorized scoring with NumPy, so that only the 
+loop over query terms remains in Python. Each term's postings (its document numbers and term 
+frequencies) are converted to arrays once and cached; the term's contributions to all documents 
+in its postings are then computed in one array operation and added to a dense score array indexed 
+by document number. The top 100 are found by partial selection rather than a full sort. This reduced 
+average search time to 15~ms on papers and 105~ms on paragraphs, speedups of 6$\times$ and 10$\times$ 
+(Section~\ref{sec:efficiency}), and the full paper grid search ran in about eight minutes. The 
+vectorized version produced the exact same evaluation metrics as the original on our tuning queries 
+over the full index.
 \subsubsection{Parameter Tuning}
 We tuned $k_1$ and $b$ separately for each collection on the Train queries, never using 
 Study queries. All 2,000 Train queries were shuffled with a fixed seed and split into 
@@ -345,6 +346,62 @@ paragraphs. We compare tuned and default parameters on the Study queries in Sect
 \subsection{Metrics}
 \subsection{Efficiency}
 \label{sec:efficiency}
+\begin{table}[h]
+  \caption{Indexing, startup, and query times, and index sizes. Query
+    times are averages over the 250 Study queries (pure-Python BM25: 50
+    queries) and exclude query tokenization; startup includes loading the
+    index and each model's precomputation. Measured single-threaded on a
+    shared server, so times are approximate.}
+  \label{tab:efficiency}
+  \small
+  \begin{tabular}{lrr}
+    \toprule
+    & Papers & Paragraphs \\
+    \midrule
+    Documents                    & 34,308      & 2,267,185 \\
+    Avg.\ document length (tokens) & 3,361     & 50.7 \\
+    \midrule
+    Indexing (build and save)    & 66~s        & 182~s \\
+    Index size on disk (JSON)    & 242~MB      & 974~MB \\
+    Startup, BM25                & 9.4~s       & 28.7~s \\
+    Startup, TF-IDF              & 18.1~s      & 68.7~s \\
+    \midrule
+    Query, BM25 (NumPy)          & 9.2~ms      & 74.3~ms \\
+    Query, BM25 (pure Python)    & 91~ms       & 1,076~ms \\
+    Query, TF-IDF (pure Python)  & 95.6~ms     & 1,115.5~ms \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+All times were measured single-threaded with Python~3.8 on a shared
+server with an Intel Xeon Gold 5215 CPU (2.50~GHz) and 62~GiB of RAM.
+Preprocessing the 34,308 raw papers into both collections takes about
+4.5 minutes, after which building both indexes takes about 4 minutes
+(Table~\ref{tab:efficiency}).
+
+Building the paragraph index takes about three times as long as the paper
+index, although both collections contain a similar number of tokens,
+because the paragraph index records many more postings: each term is
+stored once per paragraph in which it occurs rather than once per paper.
+The same effect governs query time. Paragraph queries take longer than
+paper queries despite much shorter documents, because the postings of a
+common query term span far more documents (up to 2.27 million rather
+than 34 thousand), and every posting must be scored.
+
+The gap between BM25 and TF-IDF reflects our implementations rather than
+the models themselves. TF-IDF uses the same pure-Python loop over
+postings as our original BM25, and the two run at nearly the same speed
+(95.6 vs.\ 91~ms on papers; 1,115.5 vs.\ 1,076~ms on paragraphs), so
+vectorizing TF-IDF would likely yield a similar speedup of roughly an
+order of magnitude. TF-IDF also has a longer startup, since it computes a
+vector norm for every document by walking all postings before the first
+query; for paragraphs this adds about 40 seconds.
+
+Our indexes are stored as JSON, which is simple but costly to load: the
+974~MB paragraph index occupies about 5.5~GB of memory during retrieval,
+because each posting is stored as Python objects, and loading accounts
+for most of the startup time. Storing postings as compact numeric arrays
+would reduce both memory use and startup time.
 
 \section{Results Analysis}
 \label{sec:analysis}
