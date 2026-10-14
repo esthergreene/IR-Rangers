@@ -196,7 +196,9 @@ how these paragraphs are handled in Section~\ref{sec:docrep}.
 \subsection{Document Representation}
 \label{sec:docrep}
 We construct two separate document collections from the processed JSONL files, namely one for paper retrieval and another for paragraph retrieval. In the paper collection, each document consists of its title and all non-empty paragraphs. This means we omit the separate abstract field. We did this because the first paragraph typically contains the abstract and usually has fewer extraction errors, such as merged words. This helps avoid duplicating the abstract within the same document. 
+
 For paragraph retrieval, we treat each non-empty paragraph as an individual document. Of the 2,275,574 original paragraphs, 8,389 become empty after preprocessing, so we exclude them. This leaves us with 2,267,185 indexed paragraphs. We keep the first paragraph of each paper because abstracts can be relevant to retrieval results, as demonstrated by paragraph 2409.12643_1 in the Train relevance judgments. 
+
 Essentially, both collections use inverted indexes that map each term to a postings list containing document numbers and term frequencies. The indexes also store individual document lengths and average document length, supporting the retrieval models described in Sections 2.3 and 2.4. Each index is built from its processed JSONL collection and saved as a JSON file. This means subsequent runs can load the existing index without rebuilding it. The paper and paragraph indexes occupy 242 MB and 974 MB on disk, with loading times of approximately 9.2 and 29.0 seconds (Table 7).
 \subsection{TF-IDF}
 \label{sec:tfidf}
@@ -273,6 +275,7 @@ average search time to 15~ms on papers and 105~ms on paragraphs, speedups of 6$\
 (Section~\ref{sec:efficiency}), and the full paper grid search ran in about eight minutes. The 
 vectorized version produced the exact same evaluation metrics as the original on our tuning queries 
 over the full index.
+
 \subsubsection{Parameter Tuning}
 We tuned $k_1$ and $b$ separately for each collection on the Train queries, never using 
 Study queries. All 2,000 Train queries were shuffled with a fixed seed and split into 
@@ -355,6 +358,18 @@ paragraphs. We compare tuned and default parameters on the Study queries in Sect
 
 \subsection{Search Interface}
 \label{sec:interface}
+We developed a web-based search interface that lets users interact with the paper retrieval system. The interface uses a REACT frontend connected to a Python FastAPI through HTTP endpoints. At startup, the backend loads the previously constructed paper index and then initializes the BM25 retrieval model using the tuned parameters described in Section 2.4 ((k_1 - 4.0), (b = 0.75)). Search queries use the same preprocessing configuration as the indexed documents. We did this to try to keep consistency between query terms and index vocabulary. The backend then retrieves and returns the top-ranked papers, which are seen in the interface. 
+
+To present search results, we generate a separate metadata file which has paper identifiers, titles, publication information, and abstracts. Because the original abstract fields can contain extraction problems, the metadata generation process looks to prioritize the first paragraph of each paper. This is because we generally see a cleaner version of the abstract. Search results display paper titles alongside excerpts selected from their abstracts. So rather than truncating abstracts at a fixed character position, our backend identifies sentences containing query terms to provide excerpts that better reflect the relevance of each result. 
+
+The interface also supports vocabulary highlighting and title autocomplete. Query terms are displayed in their original readable forms, excluding stopwords. We did this in regard to stems used internally for retrieval. Matching terms are highlighted in (yellow) result excerpts, and users can toggle individual highlights. As a user types, autocomplete suggests paper titles containing the entered text. To reduce repeated string processing, we cache the lowercase versions of paper titles when the backend starts. These features are exposed through the /api/search, /api/vocabulary, and /api/suggest endpoints. This is in addition to /api/health endoint used to verify backend availability. 
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/search_interface.png}
+    \caption{IR-Rangers search interface displaying ranked research papers and highlighted query terms.}
+    \label{fig:search-interface}
+\end{figure}
 
 \section{Evaluation Results}
 \label{sec:results}
