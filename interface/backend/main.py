@@ -164,6 +164,40 @@ def search(
         "collection": collection,
     }
 
+@app.get("/api/document/{doc_id}")
+def document_preview(
+    doc_id: str,
+    collection: Literal["paper", "paragraph"] = "paper",
+):
+    index = get_collection_index(collection)
+    try:
+        index.doc_number(doc_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Document not found.") from None
+
+    if collection == "paper":
+        paper = paper_metadata.get(doc_id)
+        if paper is None:
+            raise HTTPException(status_code=404, detail="Document preview is not available.")
+        content = paper["abstract"]
+        title = paper["title"]
+    else:
+        paragraph = get_paragraph_metadata(doc_id, index)
+        paper = paper_metadata.get(paragraph["paper_id"])
+        if paper is None:
+            raise HTTPException(status_code=404, detail="Document preview is not available.")
+        content = paragraph["text"]
+        title = paper["title"]
+
+    return {
+        "id": doc_id,
+        "title": title,
+        "type": "Paper" if collection == "paper" else "Paragraph",
+        "source": "arXiv",
+        "year": paper["year"],
+        "content": content,
+    }
+
 @app.get("/api/vocabulary")
 def vocabulary(q: str):
     tokens = tokenizer.tokenize(q)

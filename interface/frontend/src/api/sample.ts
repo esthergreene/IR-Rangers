@@ -1,5 +1,5 @@
 import { normalize } from '../lib/text'
-import type { SearchApi, SearchResult, VocabularyGroup } from './types'
+import type { DocumentPreview, SearchApi, SearchCollection, SearchResult, VocabularyGroup } from './types'
 
 /*
  * Synthesized data carried over from the search prototype, so the interface
@@ -91,6 +91,20 @@ export const sampleApi: SearchApi = {
       total: SAMPLE_RESULTS.length,
       model,
       collection,
+    }
+  },
+
+  async preview(id: string, collection: SearchCollection): Promise<DocumentPreview> {
+    await wait(120)
+    const result = SAMPLE_RESULTS.find((item) => item.id === id)
+    if (!result) throw new Error('This sample document is no longer available.')
+    return {
+      id: result.id,
+      title: result.title,
+      type: collection === 'paragraph' ? 'Paragraph' : result.type,
+      source: result.source,
+      year: result.year,
+      content: result.excerpt,
     }
   },
 

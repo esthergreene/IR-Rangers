@@ -4,6 +4,7 @@ import {
   SAMPLE_QUERY,
   getSearchApi,
   type SearchCollection,
+  type DocumentPreview as DocumentPreviewData,
   type SearchModel,
   type SearchResult,
 } from "./api";
@@ -13,6 +14,7 @@ import type { DrawerPage } from "./components/Drawer";
 import { FilterButton, FilterPanel } from "./components/Filters";
 import { MenuIcon } from "./components/icons";
 import { Button } from "./components/buttons";
+import { DocumentPreview } from "./components/DocumentPreview";
 import {
   ResultList,
   ResultsHead,
@@ -66,6 +68,11 @@ export default function App() {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [panel, setPanel] = useState<Panel>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [documentPreview, setDocumentPreview] = useState<{
+    status: "loading" | "done" | "error";
+    document: DocumentPreviewData | null;
+    error: string | null;
+  } | null>(null);
   const vocab = useVocabulary();
   const highlights = useHighlightSweep();
   const toast = useToast();
@@ -77,6 +84,7 @@ export default function App() {
   const vocabPanelRef = useRef<HTMLDivElement>(null);
   const resultsRef = useRef<HTMLOListElement>(null);
   const searchSeq = useRef(0);
+  const previewSeq = useRef(0);
 
   const drawerId = useId();
   const vocabPanelId = useId();
@@ -195,6 +203,31 @@ export default function App() {
     if (search.status !== "idle") {
       runSearch(search.query, false, model, nextCollection, false);
     }
+  }
+
+  async function openDocumentPreview(result: SearchResult) {
+    const seq = ++previewSeq.current;
+    setDocumentPreview({ status: "loading", document: null, error: null });
+    try {
+      const document = await getSearchApi(sampleData).preview(result.id, collection);
+      if (seq !== previewSeq.current) return;
+      setDocumentPreview({ status: "done", document, error: null });
+    } catch (error) {
+      if (seq !== previewSeq.current) return;
+      setDocumentPreview({
+        status: "error",
+        document: null,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Could not load the document preview.",
+      });
+    }
+  }
+
+  function closeDocumentPreview() {
+    previewSeq.current++;
+    setDocumentPreview(null);
   }
 
   /* ---------- Vocabulary ---------- */
@@ -402,9 +435,7 @@ export default function App() {
                   shown={shown}
                   sampleData={sampleData}
                   highlight={highlight}
-                  onOpenDocument={() =>
-                    toast.show("Document pages aren't connected yet.")
-                  }
+                  onOpenDocument={openDocumentPreview}
                   onClearFilters={clearFilters}
                   onUseSampleData={() => changeDataSource(true)}
                 />
@@ -521,6 +552,12 @@ export default function App() {
         }}
         onClose={() => setDrawerOpen(false)}
       />
+      {documentPreview && (
+        <DocumentPreview
+          preview={documentPreview}
+          onClose={closeDocumentPreview}
+        />
+      )}
       <Toast message={toast.message} visible={toast.visible} />
     </>
   );

@@ -91,3 +91,4 @@ Open `http://127.0.0.1:5173` in your browser. If using VS Code Remote SSH, forwa
 Turn **Sample data** off in the frontend menu or Settings page to search the real collection. Changing the model or collection in Settings also turns sample data off and searches the backend using the selected BM25/TF-IDF model and paper/paragraph collection. Restart any backend process that was already running before these settings were added.
 
 Search results are shown 10 ranked research papers at a time, with page controls to browse additional matches.
+Click a result to open a preview containing its abstract (paper collection) or full paragraph text (paragraph collection).

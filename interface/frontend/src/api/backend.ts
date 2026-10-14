@@ -1,5 +1,5 @@
 import { normalize } from '../lib/text'
-import type { SearchApi, SearchResponse, VocabularyGroup } from './types'
+import type { DocumentPreview, SearchApi, SearchResponse, VocabularyGroup } from './types'
 
 /*
  * Client for the real search backend.
@@ -38,6 +38,13 @@ export const backendApi: SearchApi = {
       }
       return response
     })
+  },
+
+  preview(id, collection) {
+    return getJson<DocumentPreview>(
+      `/document/${encodeURIComponent(id)}`,
+      new URLSearchParams({ collection }),
+    )
   },
 
   vocabulary(query) {

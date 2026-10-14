@@ -33,6 +33,7 @@ Optional environment variables (put them in `.env.local`):
 | Request | Response |
 | --- | --- |
 | `GET /search?q=<query>&page=<n>&page_size=<n>&model=<name>&collection=<name>&term=<t>…` | `{ query, results: SearchResult[], total, model, collection }` |
+| `GET /document/<id>?collection=<paper\|paragraph>` | `{ id, title, type, source, year, content }` |
 | `GET /vocabulary?q=<query>` | `VocabularyGroup[]` |
 | `GET /suggest?q=<partial query>` | `string[]` |
 

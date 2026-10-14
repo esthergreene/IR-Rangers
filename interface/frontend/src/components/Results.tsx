@@ -120,20 +120,24 @@ const ROW = 'grid grid-cols-[44px_minmax(0,1fr)] gap-x-5 rounded-row border bord
 
 function ResultRow({ result, index, highlight, onOpen }: { result: SearchResult; index: number; highlight: HighlightOptions; onOpen(result: SearchResult): void }) {
   return (
-    <li className={ROW} style={cssVars({ '--d': `${index * 90}ms` })}>
+    <li
+      role="link"
+      tabIndex={0}
+      aria-label={`Preview document: ${result.title}`}
+      className={`${ROW} group cursor-pointer focus-visible:outline-2 focus-visible:outline-focus`}
+      style={cssVars({ '--d': `${index * 90}ms` })}
+      onClick={() => onOpen(result)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          onOpen(result)
+        }
+      }}
+    >
       <DocIcon format={result.format} />
       <div>
-        <h2 className="text-[17px] leading-[1.3] font-semibold max-sm:text-[16px]">
-          <a
-            href="#"
-            className="hover:underline hover:decoration-1 hover:underline-offset-3"
-            onClick={(e) => {
-              e.preventDefault()
-              onOpen(result)
-            }}
-          >
-            {result.title}
-          </a>
+        <h2 className="text-[17px] leading-[1.3] font-semibold group-hover:underline group-hover:decoration-1 group-hover:underline-offset-3 max-sm:text-[16px]">
+          {result.title}
         </h2>
         <p className="mt-1.5 max-w-[68ch] font-serif text-[16px] leading-[1.62] text-ink-2 max-sm:text-[15.5px]">
           <HighlightedText text={result.excerpt} {...highlight} />

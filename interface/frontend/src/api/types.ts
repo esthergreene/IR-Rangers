@@ -12,6 +12,15 @@ export interface SearchResult {
   excerpt: string
 }
 
+export interface DocumentPreview {
+  id: string
+  title: string
+  type: string
+  source: string
+  year: number
+  content: string
+}
+
 export interface SearchResponse {
   query: string
   results: SearchResult[]
@@ -50,6 +59,7 @@ export interface SearchApi {
     model: SearchModel,
     collection: SearchCollection,
   ): Promise<SearchResponse>
+  preview(id: string, collection: SearchCollection): Promise<DocumentPreview>
   vocabulary(query: string): Promise<VocabularyGroup[]>
   suggest(text: string): Promise<string[]>
 }
