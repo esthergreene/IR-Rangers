@@ -492,7 +492,7 @@ Query terms are displayed in their original readable forms, excluding stopwords.
 The interface shows the orginal words rather than the stems thar are used interally.
 Matching terms are highlighted in yellow result excerpts, and users can toggle individual highlights. 
 As a user types, autocomplete suggests paper titles containing the entered text. 
-To reduce repeated string processing, we cache the lowercase versions of paper titles when the backend starts. 
+To reduce repeated string processing, we cache the lowercase versions of paper titles when the backend starts. It also only loads the paper index at first and the paragraph index is loaded lazily on the first paragraph cache.
 These features are exposed through the \texttt{/api/search}, \texttt{/api/vocabulary}, and \texttt{/api/suggest} endpoints
 The \texttt{/api/health} endpoint is used to verify backend availability. 
 
