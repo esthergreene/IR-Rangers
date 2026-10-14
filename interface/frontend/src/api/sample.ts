@@ -1,9 +1,9 @@
 import { normalize } from '../lib/text'
-import type { SearchApi, SearchResult, VocabularyGroup } from './types'
+import type { DocumentPreview, SearchApi, SearchCollection, SearchResult, VocabularyGroup } from './types'
 
 /*
- * Synthesized data carried over from the search prototype. Every query returns
- * the same sample results, so the interface can be exercised without a backend.
+ * Synthesized data carried over from the search prototype, so the interface
+ * can be exercised without a backend.
  */
 
 export const SAMPLE_QUERY = 'remote work'
@@ -82,9 +82,30 @@ const SAMPLE_SUGGESTIONS = [
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 export const sampleApi: SearchApi = {
-  async search(query) {
+  async search(query, _terms, page, pageSize, model, collection) {
     await wait(450)
-    return { query, results: SAMPLE_RESULTS }
+    const start = (page - 1) * pageSize
+    return {
+      query,
+      results: SAMPLE_RESULTS.slice(start, start + pageSize),
+      total: SAMPLE_RESULTS.length,
+      model,
+      collection,
+    }
+  },
+
+  async preview(id: string, collection: SearchCollection): Promise<DocumentPreview> {
+    await wait(120)
+    const result = SAMPLE_RESULTS.find((item) => item.id === id)
+    if (!result) throw new Error('This sample document is no longer available.')
+    return {
+      id: result.id,
+      title: result.title,
+      type: collection === 'paragraph' ? 'Paragraph' : result.type,
+      source: result.source,
+      year: result.year,
+      content: result.excerpt,
+    }
   },
 
   async vocabulary() {

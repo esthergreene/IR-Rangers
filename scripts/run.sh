@@ -167,8 +167,11 @@ interface() {
     echo "Waiting for the backend (it loads the paper index first)..."
     local ready=false
     for _ in $(seq 1 "$BACKEND_STARTUP_SECONDS"); do
-        if python -c "import urllib.request; \
-urllib.request.urlopen('http://$HOST:$BACKEND_PORT/api/health', timeout=1)" 2>/dev/null; then
+        if python -c "import json, urllib.request; \
+health=json.load(urllib.request.urlopen('http://$HOST:$BACKEND_PORT/api/health', timeout=1)); \
+required_models = {'bm25', 'tfidf'}; required_collections = {'paper', 'paragraph'}; \
+assert health.get('status') == 'ok' and required_models.issubset(set(health.get('models', []))) \
+and required_collections.issubset(set(health.get('collections', [])))" 2>/dev/null; then
             ready=true
             break
         fi

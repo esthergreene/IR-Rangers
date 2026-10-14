@@ -1,12 +1,11 @@
 import { normalize } from '../lib/text'
-import type { SearchApi, SearchResponse, VocabularyGroup } from './types'
+import type { DocumentPreview, SearchApi, SearchResponse, VocabularyGroup } from './types'
 
 /*
- * Client for the real search backend, which doesn't exist yet. Until it does,
- * every request fails and the UI shows its "Search didn't respond" state.
+ * Client for the real search backend.
  *
  * Expected endpoints (JSON responses, shapes in ./types.ts):
- *   GET {base}/search?q=<query>&term=<term>&term=<term>  → SearchResponse
+ *   GET {base}/search?q=<query>&page=<n>&page_size=<n>&model=<name>&collection=<name> → SearchResponse
  *   GET {base}/vocabulary?q=<query>                      → VocabularyGroup[]
  *   GET {base}/suggest?q=<partial query>                 → string[]
  *
@@ -24,10 +23,28 @@ async function getJson<T>(path: string, params: URLSearchParams): Promise<T> {
 }
 
 export const backendApi: SearchApi = {
-  search(query, terms) {
-    const params = new URLSearchParams({ q: query })
+  search(query, terms, page, pageSize, model, collection) {
+    const params = new URLSearchParams({
+      q: query,
+      page: String(page),
+      page_size: String(pageSize),
+      model,
+      collection,
+    })
     for (const term of terms) params.append('term', term)
-    return getJson<SearchResponse>('/search', params)
+    return getJson<SearchResponse>('/search', params).then((response) => {
+      if (response.model !== model || response.collection !== collection) {
+        throw new Error('The search backend did not apply the selected model and collection. Restart the backend and try again.')
+      }
+      return response
+    })
+  },
+
+  preview(id, collection) {
+    return getJson<DocumentPreview>(
+      `/document/${encodeURIComponent(id)}`,
+      new URLSearchParams({ collection }),
+    )
   },
 
   vocabulary(query) {
