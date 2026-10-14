@@ -37,20 +37,33 @@
 \maketitle
 
 \section{Introduction}
+The volume of scientific literature makes finding relevant work
+increasingly difficult, both at the level of whole papers and of the
+specific passages that answer a question. This paper describes the first
+phase of our retrieval system for arXiv papers, which applies two
+traditional term-matching models, TF-IDF and BM25, to retrieving both
+papers and individual paragraphs. We describe our preprocessing of a
+noisy collection, tune BM25 per task, evaluate both models with
+significance testing, and analyze where term matching succeeds and where
+it fails, particularly on hard queries that paraphrase technical
+terminology. As we will detail, our findings show that BM25 
+significantly outperforms TF-IDF on both tasks.
+
 The test collection consists of 34,308 arXiv papers published in August
 and September 2024. Each paper is provided both as raw HTML scraped from
-the arXiv website and as a processed JSON file containing its identifier,
+the ar5iv website and as a processed JSON file containing its identifier,
 title, abstract, and paragraphs. Because the JSON files were produced with
 rule-based extraction, they contain noise such as leftover \LaTeX{} markup
 and merged words, which we discuss in Section~\ref{sec:preprocessing}.
-In total, the collection contains 2,275,574 paragraphs, or about 66 per paper.
+In total, the collection contains 2,275,574 paragraphs, which averages out
+to approximately 66 paragraphs per paper.
 
 We address two tasks over this collection: \emph{paper retrieval}, which
 returns papers identified by their arXiv ID (in YYMM.NNNNN format), and
 \emph{paragraph retrieval}, which returns individual paragraphs. For each
 query, systems return their top 100 results. Three query sets are
-provided: Train (2,000 queries), Study (200 queries with relevance
-judgments, which we use for all analysis in this paper), and Test (200
+provided: Train (2,000 queries), Study (250 queries with relevance
+judgments, which we use for all analysis in this paper), and Test (250
 queries whose judgments are withheld). Each set contains 30\% easy, 50\%
 medium, and 20\% hard queries. Relevance is graded on a three-point
 scale: a document that fully addresses the query is relevant (2), one that
@@ -59,6 +72,24 @@ relevant (1), and any document not in the judgments is considered
 non-relevant.
 
 \section{Methodology}
+\label{sec:method}
+
+Our system processes both retrieval tasks with a single pipeline.
+Documents and queries are first cleaned and tokenized
+(Section~\ref{sec:preprocessing}); the processed text is used to build
+two collections, one of papers and one of paragraphs
+(Section~\ref{sec:docrep}), each with its own inverted index. Two ranking
+models, TF-IDF (Section~\ref{sec:tfidf}) and BM25
+(Section~\ref{sec:bm25}), score documents from these indexes; both use
+identical preprocessing and the same indexes, so differences between them
+reflect only their scoring functions. Section~\ref{sec:eval} describes our
+evaluation setup, and Section~\ref{sec:interface} the search interface.
+
+Throughout, $N$ denotes the number of documents in a collection,
+$\mathit{df}_t$ the number of documents containing term $t$,
+$\mathit{tf}_{t,d}$ the number of occurrences of $t$ in document $d$,
+and $L_d$ and $L_{\mathit{avg}}$ the length of $d$ and the average
+document length, in tokens.
 \subsection{Preprocessing}
 \label{sec:preprocessing}
 
@@ -102,7 +133,16 @@ math delimiter and the text between them deleted, so math spans are only
 removed from paragraphs with an even number of dollar signs. Only 1,458
 paragraphs (0.06\%) contain an unpaired dollar sign. They keep their math
 spans, although \LaTeX{} command removal and the token filters still
-remove most of the resulting tokens.
+remove most of the resulting tokens. We evaluate the effects of our choice
+to employ inline math removal and stemming on retrieval in Section~\ref{sec:analysis}.
+
+Some extraction noise is not addressed by preprocessing. Adjacent words
+are occasionally merged (e.g., ``andenthusiasts'', ``inmedical''), and
+this also occurs in queries: Test query 2251 contains ``sustainedvowel''.
+Such tokens cannot match their component words. Display equations are
+absent from the extracted text altogether, and the \texttt{abstract}
+field contains more merged words than the copy of the abstract that
+appears as each paper's first paragraph (Section~\ref{sec:docrep}).
 
 \begin{table}[h]
   \caption{Paragraph collection statistics under three preprocessing
@@ -141,23 +181,219 @@ number of tokens unchanged but shrinks the vocabulary by a further
 10.7\%, from 659,861 to 589,251 terms. The cost is that some distinct
 words share a stem: ``different'' and ``difference'' both become
 ``differ'', and ``generate'', ``generation'', and ``generative'' all
-become ``generat''. Finally, cleaning removes every token from 8,389
-paragraphs, which consisted mostly of mathematical notation; we describe
-how these are handled in Section~\ref{sec:docrep}.
+become ``generat''. Table~\ref{tab:cleaning} also shows that the number
+of paragraphs under 10 tokens nearly triples (82,390 $\rightarrow$ 230,782). 
+This is because the cleaning process employed in the latter two pipelines
+strips math out of math-heavy paragraphs and leaves only their prose, causing
+many to become short fragments. Finally, cleaning removes every token from 8,389 
+paragraphs. Of these, 94\% contain inline math or \LaTeX{} commands: 
+they are standalone formulas, sometimes with a few connecting words 
+(``if'', ``then'', ``where'') that are themselves stopwords. We describe 
+how these paragraphs are handled in Section~\ref{sec:docrep}.
 
 \subsection{Document Representation}
 \label{sec:docrep}
-\subsection{Search Interface}
-\subsection{BM25}
 \subsection{TF-IDF}
+\label{sec:tfidf}
+\subsection{BM25}
+\label{sec:bm25}
+BM25 addresses two weaknesses of the TF-IDF weighting in
+Section~\ref{sec:tfidf}: it saturates the contribution of repeated terms,
+and it normalizes document length relative to the collection average
+rather than by vector length. We describe the scoring function we use,
+our implementation, and how we tuned its two parameters, $k_1$ and $b$,
+for each collection.
+\subsubsection{Scoring Function}
+BM25 scores a document $d$ for a query $q$ as
+\begin{equation}
+  \mathrm{score}(q,d) = \sum_{t \in q} \mathit{idf}_t \cdot
+    \frac{\mathit{tf}_{t,d}\,(k_1 + 1)}
+         {\mathit{tf}_{t,d} + k_1 \bigl(1 - b + b\,L_d / L_{\mathit{avg}}\bigr)}
+  \label{eq:bm25}
+\end{equation}
+\begin{equation}
+  \mathit{idf}_t = \ln\!\left(1 + \frac{N - \mathit{df}_t + 0.5}{\mathit{df}_t + 0.5}\right)
+  \label{eq:idf}
+\end{equation}
+where the sum runs over query tokens, so a term repeated in the query
+contributes once per occurrence. The term-frequency component saturates:
+as $\mathit{tf}_{t,d}$ grows, it approaches $k_1 + 1$, so additional 
+occurrences of a term add progressively less. The parameter $k_1$ controls
+how quickly this happens; a small $k_1$ makes the score depend mainly on whether 
+the term occurs at all, while a large $k_1$ lets repetition keep contributing.
+The parameter $b \in [0, 1]$ controls length normalization: a document longer than 
+average ($L_d > L_{\mathit{avg}}$) has a larger denominator and therefore a 
+lower score for the same term frequency, with $b = 0$ disabling normalization
+and $b = 1$ applying it fully.
+
+We use the ``Lucene (accurate)'' variant of BM25 described by
+Kamphuis et al.~\cite{kamphuis2020bm25}, the third row of their
+Table~1. Since they found no significant differences in effectiveness
+among eight BM25 variants, we chose on practical grounds. First, its
+IDF adds one inside the logarithm. The original
+formulation~\cite{robertson1994m} assigns negative weight to terms
+that occur in more than half the documents, so matching such a term
+would lower a document's score, and a document matching more query terms
+could score lower than one matching fewer. In our paper collection, 312 terms
+exceed this threshold, including words common in our natural-language
+queries such as ``use'', ``result'', and ``differ'' (as in ``How does
+X differ from Y?''). Second, it uses exact document lengths, which our
+index already stores, rather than Lucene's compressed approximation,
+which Kamphuis et al.\ found gave negligible speed benefits. Third,
+variants designed for long documents, such as BM25L and BM25+, add a
+further parameter to tune without significant gains in their study.
+Following \citet{robertson1994m}, we also multiply the
+term-frequency component by $k_1 + 1$; this scales all scores by a
+constant and does not change the ranking.
+
+\subsubsection{Implementation}
+Our implementation scores only documents that contain at least one query term,
+accumulating each term's contribution over its postings (term-at-a-time). Two
+quantities are precomputed: $\mathit{idf}_t$ for every term when the model is 
+created, and the length-normalization term $k_1(1 - b + b\,L_d/L_{\mathit{avg}})$
+for every document, which is recomputed only when $k_1$ or $b$ change. A term 
+repeated in the query is processed once, with its contribution multiplied by its 
+query frequency. After scoring, the top 100 documents are selected, with ties broken
+by internal document number so that runs are reproducible.
+
+Our first implementation accumulated scores in a Python loop over individual postings.
+It was correct but took about one second per query, so a full tuning grid (54 parameter
+settings for 1,600 queries on papers) would have required roughly a day of computation. 
+We therefore vectorized scoring with NumPy, so that only the loop over query terms remains 
+in Python. Each term's postings (its document numbers and term frequencies) are converted
+to arrays once and cached; the term's contributions to all documents in its postings are 
+then computed in one array operation and added to a dense score array indexed by document 
+number. The top 100 are found by partial selection rather than a full sort. This reduced 
+search time to milliseconds per query (Section~\ref{sec:efficiency}), so the full paper
+grid search ran in about eight minutes. The vectorized version produced the exact same
+evaluation metrics as the original on our tuning queries over the full index.
+\subsubsection{Parameter Tuning}
+We tuned $k_1$ and $b$ separately for each collection on the Train queries, never using 
+Study queries. All 2,000 Train queries were shuffled with a fixed seed and split into 
+1,600 tuning queries and 400 held-out queries. On the tuning queries, we evaluated every 
+setting in a grid:
+$k_1 \in \{0.9, 1.2, 1.8, 2.4, 3, 4, 5, 6, 8\}$ for papers and 
+$k_1 \in \{0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.5, 1.8\}$ for paragraphs, each with
+$b \in \{0.3, 0.5, 0.6, 0.75, 0.9, 1.0\}$. We selected the setting with the highest nDCG@5.
+Among our evaluation metrics, nDCG@5 is the only one that both uses graded relevance and focuses
+on the top of the ranking, which is what users of the interface see first; deeper metrics such as
+P@10 are less informative here, because most queries have only a few judged documents.
+
+The selected settings are $k_1 = 4.0$, $b = 0.75$ for papers and $k_1 = 0.4$, $b = 0.9$ 
+for paragraphs (Figures~\ref{fig:tuning-paper} and~\ref{fig:tuning-paragraph}). The tenfold 
+difference in $k_1$ likely reflects document length. Papers average about 3,350 tokens, so a term 
+repeated many times is genuinely informative about a paper's topic, and a large $k_1$ lets 
+repetition keep contributing. Paragraphs have a median length of about 40 tokens and rarely repeat a term, 
+so a small $k_1$, which makes the score depend more on whether a term occurs, works best. 
+Both collections favor substantial length normalization: $b = 0.3$ is the worst value in 
+every row of the paper grid. The paper optimum also lies on a broad plateau ($k_1 \geq 3$, 
+$0.5 \leq b \leq 0.9$) in which scores differ by about 0.01 or less, so the exact choice 
+within it matters little.
+
+On the 400 held-out queries, the tuned settings outperformed both the common textbook values
+($k_1 = 1.2$, $b = 0.75$) and the default of the Anserini toolkit used by Kamphuis et al.\ 
+($k_1 = 0.9$, $b = 0.4$) for both collections (Table~\ref{tab:heldout}), so the selected 
+parameters generalize beyond the queries used to choose them. The choice is also robust to 
+the target metric: tuning for nDCG or MRR instead selected the samesetting for papers, and 
+tuning for MRR on a separate sample of 1,000 Train queries selected the same setting for 
+paragraphs. We compare tuned and default parameters on the Study queries in Section~\ref{sec:analysis}.
+
+\begin{table}[t]
+  \caption{nDCG@5 on 400 held-out Train queries not used for tuning.}
+  \label{tab:heldout}
+  \small
+  \begin{tabular}{lcrrr}
+    \toprule
+    & Selected & Tuned & Textbook & Default \\
+    & $(k_1, b)$ & & $(1.2, 0.75)$ & $(0.9, 0.4)$ \\
+    \midrule
+    Papers     & $(4.0, 0.75)$ & \textbf{0.473} & 0.454 & 0.436 \\
+    Paragraphs & $(0.4, 0.9)$  & \textbf{0.371} & 0.354 & 0.344 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[t]
+  \includegraphics[width=\columnwidth]{figures/bm25_tuning_paper_full.pdf}
+  \caption{BM25 nDCG@5 on 1,600 Train tuning queries (paper collection).
+    Rows and columns are the tested values, not to scale; scores are
+    rounded to three decimals. The outlined cell is the selected setting
+    ($k_1 = 4.0$, $b = 0.75$), which scored highest before rounding. It
+    lies within a broad plateau ($k_1 \geq 3$, $0.5 \leq b \leq 0.9$) in
+    which settings differ by about 0.01 or less.}
+  \label{fig:tuning-paper}
+\end{figure}
+
+\begin{figure}[t]
+  \includegraphics[width=\columnwidth]{figures/bm25_tuning_paragraph_full.pdf}
+  \caption{BM25 nDCG@5 on 1,600 Train tuning queries (paragraph
+    collection), formatted as in Figure~\ref{fig:tuning-paper}. The
+    outlined cell is the selected setting ($k_1 = 0.4$, $b = 0.9$). The
+    region within about 0.01 of it is narrower than for papers
+    ($0.4 \leq k_1 \leq 0.6$, $0.75 \leq b \leq 1.0$), and scores fall
+    off sharply for large $k_1$ combined with strong length normalization.}
+  \label{fig:tuning-paragraph}
+\end{figure}
+
 \subsection{Evaluation Setup}
+\label{sec:eval}
+
+\subsection{Search Interface}
+\label{sec:interface}
 
 \section{Evaluation Results}
 \subsection{Metrics}
 \subsection{Efficiency}
+\label{sec:efficiency}
 
 \section{Results Analysis}
+\label{sec:analysis}
 
+\begin{table}[h]
+  \caption{Preprocessing ablation on Study queries, nDCG@5, with BM25
+    parameters fixed to the values tuned for the main configuration
+    (math removed, Snowball stemming). Comparing the first two columns
+    isolates math removal; comparing the last two isolates stemming.
+    $^{*}$ marks a significant difference from the column to its left
+    (paired t-test, $p < 0.05$).}
+  \label{tab:ablation}
+  \small
+  \begin{tabular}{lrrr}
+    \toprule
+    & Main & Math kept & Math kept, \\
+    &      &           & no stemming \\
+    \midrule
+    Papers, TF-IDF     & 0.313 & 0.320 & 0.379$^{*}$ \\
+    Papers, BM25       & 0.514 & 0.534$^{*}$ & 0.542 \\
+    Paragraphs, TF-IDF & 0.229 & 0.238 & 0.235 \\
+    Paragraphs, BM25   & 0.416 & 0.416 & 0.378$^{*}$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+We isolated two preprocessing choices on Study queries
+(Table~\ref{tab:ablation}). Removing inline math, which reduced the
+collection by 31.6\%, had little effect on retrieval. It made no
+significant difference for either model on paragraphs or for TF-IDF on
+papers, and slightly reduced paper BM25 (nDCG@5 0.534 to 0.514,
+significant only for nDCG@5 and strict P@5). Papers contain enough
+spelled-out notation, such as ``epsilon'' or ``kappa'', for kept math
+tokens to provide a few additional correct matches. Math removal is a 
+reasonable tradeoff for a 31.6\% reduction in collection size.
+
+Stemming mattered more, in opposite directions for our two strongest
+effects. It significantly improved paragraph BM25 on every metric
+(nDCG@5 0.378 to 0.416, MRR 0.457 to 0.509), but significantly reduced
+paper TF-IDF on every metric (nDCG@5 0.379 to 0.320); it had no
+significant effect on paper BM25 or paragraph TF-IDF. A plausible
+explanation is that short paragraphs gain from the additional matches
+stemming creates, while for long papers under cosine normalization,
+conflated stems (e.g., ``generat'' for ``generate'', ``generation'', and
+``generative'') make common stems even more frequent and dilute term
+weights. Regardless, it is important to note that even TF-IDF's best 
+configuration (no stemming, 0.379 nDCG@5) stays far below BM25 (0.542).
+This implies that the reasons for BM25's better performance over TF-IDF
+do not necessarily originate from the preprocessing pipeline.
 \section{Conclusion}
 
 \bibliographystyle{ACM-Reference-Format}

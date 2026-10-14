@@ -43,6 +43,8 @@ paper/paper.synctex.gz
 paper/paper.bbl
 paper/paper.blg
 paper/paper.out
+paper/*.synctex(busy)
+paper/notes.md
 
 # ── Logs ──────────────────────────────────────────────────────────
 *.log
