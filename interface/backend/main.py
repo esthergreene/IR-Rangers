@@ -8,6 +8,7 @@ paragraphs and return the results as JSON.
 
 from array import array
 import json
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -34,7 +35,7 @@ CONFIG_PATH = PROCESSED_DIR / "preprocessing_config.yaml"
 # Same processing settings as our indexed papers
 tokenizer = Tokenizer(config_path=CONFIG_PATH)
 
-# Exsiting paper index
+# Existing paper index
 paper_index = load_index(INDEX_PATH)
 collection_indexes = {"paper": paper_index}
 search_models = {
@@ -45,10 +46,23 @@ paragraph_offsets = None
 # Here we're storing paper information by doc ID. The goal here is to make it a quicker lookup.
 paper_metadata = {}
 
+if not METADATA_PATH.exists():
+    raise FileNotFoundError(
+        "Paper metadata is missing. Run python scripts/build_paper_metadata.py first."
+    )
+
 with open(METADATA_PATH, "r", encoding="utf-8") as file:
     for line in file:
         paper = json.loads(line)
         paper_metadata[paper["doc_id"]] = paper
+
+searchable_titles = [
+    (paper["title"].lower(), paper["title"])
+
+    for paper in paper_metadata.values()
+
+    if paper.get("title")
+]
 
 def get_collection_index(collection):
     if collection not in collection_indexes:
@@ -119,6 +133,27 @@ def health():
 # Results per query that can be browsed: the same depth as the submitted TREC run files.
 MAX_RESULTS = 100
 
+def make_excerpt(text, query, max_length=300):
+    if not text:
+        return ""
+
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    query_tokens = set(tokenizer.tokenize(query))
+
+    def relevance(sentence):
+        sentence_tokens = set(tokenizer.tokenize(sentence))
+        return len(query_tokens & sentence_tokens)
+
+    best_sentence = max(sentences, key=relevance, default="")
+
+    if relevance(best_sentence) == 0:
+        best_sentence = sentences[0]
+
+    if len(best_sentence) <= max_length:
+        return best_sentence
+
+    return best_sentence[:max_length].rsplit(" ", 1)[0] + "..."
+
 @app.get("/api/search")
 def search(
     q: str,
@@ -138,11 +173,11 @@ def search(
     for doc_id, score in matches:
         if collection == "paper":
             paper = paper_metadata.get(doc_id)
-            excerpt = paper["abstract"][:300] if paper else ""
+            excerpt = make_excerpt(paper["abstract"], q) if paper else ""
         else:
             paragraph = get_paragraph_metadata(doc_id, get_collection_index("paragraph"))
             paper = paper_metadata.get(paragraph["paper_id"])
-            excerpt = paragraph["text"][:300]
+            excerpt = make_excerpt(paragraph["text"], q)
 
         if paper:
             results.append({
@@ -200,8 +235,8 @@ def document_preview(
 
 @app.get("/api/vocabulary")
 def vocabulary(q: str):
-    tokens = tokenizer.tokenize(q)
-    unique_tokens = list(dict.fromkeys(tokens))
+    words = q.split()
+    unique_tokens = list(dict.fromkeys(word for word in words if tokenizer.tokenize(word)))
 
     return [
         {
@@ -225,11 +260,9 @@ def suggest(q: str):
 
     suggestions = []
 
-    for paper in paper_metadata.values():
-        title = paper["title"]
-
-        if title and title.lower().startswith(query):
-            suggestions.append(title)
+    for lowercase_title, original_title in searchable_titles:
+        if query in lowercase_title:
+            suggestions.append(original_title)
 
         if len(suggestions) == 5:
             break
