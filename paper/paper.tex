@@ -1,4 +1,5 @@
 \documentclass[sigconf,nonacm]{acmart}
+\usepackage{subcaption}
 
 \begin{document}
 
@@ -32,7 +33,8 @@
   ...
 \end{abstract}
 
-\keywords{information retrieval, ...}
+\keywords{information retrieval, BM25, TF-IDF, scientific document
+retrieval, passage retrieval}
 
 \maketitle
 
@@ -134,7 +136,7 @@ removed from paragraphs with an even number of dollar signs. Only 1,458
 paragraphs (0.06\%) contain an unpaired dollar sign. They keep their math
 spans, although \LaTeX{} command removal and the token filters still
 remove most of the resulting tokens. We evaluate the effects of our choice
-to employ inline math removal and stemming on retrieval in Section~\ref{sec:analysis}.
+to employ inline math removal and stemming on retrieval in Section~\ref{sec:ablation}.
 
 Some extraction noise is not addressed by preprocessing. Adjacent words
 are occasionally merged (e.g., ``andenthusiasts'', ``inmedical''), and
@@ -144,7 +146,7 @@ absent from the extracted text altogether, and the \texttt{abstract}
 field contains more merged words than the copy of the abstract that
 appears as each paper's first paragraph (Section~\ref{sec:docrep}).
 
-\begin{table}[h]
+\begin{table}[t]
   \caption{Paragraph collection statistics under three preprocessing
     settings, defined in Section~\ref{sec:preprocessing}.}
   \label{tab:cleaning}
@@ -282,22 +284,26 @@ P@10 are less informative here, because most queries have only a few judged docu
 
 The selected settings are $k_1 = 4.0$, $b = 0.75$ for papers and $k_1 = 0.4$, $b = 0.9$ 
 for paragraphs (Figures~\ref{fig:tuning-paper} and~\ref{fig:tuning-paragraph}). The tenfold 
-difference in $k_1$ likely reflects document length. Papers average about 3,350 tokens, so a term 
+difference in $k_1$ likely reflects document length. Papers average about 3,361 tokens, so a term 
 repeated many times is genuinely informative about a paper's topic, and a large $k_1$ lets 
 repetition keep contributing. Paragraphs have a median length of about 40 tokens and rarely repeat a term, 
 so a small $k_1$, which makes the score depend more on whether a term occurs, works best. 
 Both collections favor substantial length normalization: $b = 0.3$ is the worst value in 
-every row of the paper grid. The paper optimum also lies on a broad plateau ($k_1 \geq 3$, 
-$0.5 \leq b \leq 0.9$) in which scores differ by about 0.01 or less, so the exact choice 
-within it matters little.
+every row of the paper grid. Paragraphs, which prefer stronger normalization ($b = 0.9$), also vary
+more in length relative to their mean than papers do (coefficient of variation 0.95 vs.\ 0.69), 
+partly because of a long tail of very long paragraphs produced by extraction errors 
+(Section~\ref{sec:preprocessing}), which would otherwise match many query terms simply by 
+length. The paper optimum also lies on a broad plateau ($k_1 \geq 3$, $0.5 \leq b \leq 0.9$) in 
+which scores differ by about 0.01 or less, so the exact choice within it matters little.
 
-On the 400 held-out queries, the tuned settings outperformed both the common textbook values
-($k_1 = 1.2$, $b = 0.75$) and the default of the Anserini toolkit used by Kamphuis et al.\ 
-($k_1 = 0.9$, $b = 0.4$) for both collections (Table~\ref{tab:heldout}), so the selected 
+For both collections, the tuned settings outperformed on the 400 held-out queries both the common textbook values
+($k_1 = 1.2$, $b = 0.75$)~\cite[Sec.~11.4.3]{manning2008irbook} and the default of the Anserini toolkit~\cite{yang2017anserini}
+($k_1 = 0.9$, $b = 0.4$), as used by Kamphuis et al.~\cite{kamphuis2020bm25}. 
+(Table~\ref{tab:heldout}), so the selected 
 parameters generalize beyond the queries used to choose them. The choice is also robust to 
-the target metric: tuning for nDCG or MRR instead selected the samesetting for papers, and 
+the target metric: tuning for nDCG or MRR instead selected the same setting for papers, and 
 tuning for MRR on a separate sample of 1,000 Train queries selected the same setting for 
-paragraphs. We compare tuned and default parameters on the Study queries in Section~\ref{sec:analysis}.
+paragraphs. We compare tuned and default parameters on the Study queries in Section~\ref{sec:tuning-results}.
 
 \begin{table}[t]
   \caption{nDCG@5 on 400 held-out Train queries not used for tuning.}
@@ -305,7 +311,7 @@ paragraphs. We compare tuned and default parameters on the Study queries in Sect
   \small
   \begin{tabular}{lcrrr}
     \toprule
-    & Selected & Tuned & Textbook & Default \\
+    & Selected & Tuned & Textbook~\cite{manning2008irbook} & Default \\
     & $(k_1, b)$ & & $(1.2, 0.75)$ & $(0.9, 0.4)$ \\
     \midrule
     Papers     & $(4.0, 0.75)$ & \textbf{0.473} & 0.454 & 0.436 \\
@@ -315,25 +321,30 @@ paragraphs. We compare tuned and default parameters on the Study queries in Sect
 \end{table}
 
 \begin{figure}[t]
-  \includegraphics[width=\columnwidth]{figures/bm25_tuning_paper_full.pdf}
-  \caption{BM25 nDCG@5 on 1,600 Train tuning queries (paper collection).
-    Rows and columns are the tested values, not to scale; scores are
-    rounded to three decimals. The outlined cell is the selected setting
-    ($k_1 = 4.0$, $b = 0.75$), which scored highest before rounding. It
-    lies within a broad plateau ($k_1 \geq 3$, $0.5 \leq b \leq 0.9$) in
-    which settings differ by about 0.01 or less.}
-  \label{fig:tuning-paper}
-\end{figure}
+  \centering
+  \begin{subfigure}{\columnwidth}
+    \includegraphics[width=\columnwidth]{figures/bm25_tuning_paper_full.pdf}
+    \caption{Papers. The selected setting ($k_1 = 4.0$, $b = 0.75$) lies
+      within a broad plateau ($k_1 \geq 3$, $0.5 \leq b \leq 0.9$) in which
+      settings differ by about 0.01 or less.}
+    \label{fig:tuning-paper}
+  \end{subfigure}
 
-\begin{figure}[t]
-  \includegraphics[width=\columnwidth]{figures/bm25_tuning_paragraph_full.pdf}
-  \caption{BM25 nDCG@5 on 1,600 Train tuning queries (paragraph
-    collection), formatted as in Figure~\ref{fig:tuning-paper}. The
-    outlined cell is the selected setting ($k_1 = 0.4$, $b = 0.9$). The
-    region within about 0.01 of it is narrower than for papers
-    ($0.4 \leq k_1 \leq 0.6$, $0.75 \leq b \leq 1.0$), and scores fall
-    off sharply for large $k_1$ combined with strong length normalization.}
-  \label{fig:tuning-paragraph}
+  \vspace{0.5em}
+  \begin{subfigure}{\columnwidth}
+    \includegraphics[width=\columnwidth]{figures/bm25_tuning_paragraph_full.pdf}
+    \caption{Paragraphs. The region within about 0.01 of the selected
+      setting ($k_1 = 0.4$, $b = 0.9$) is narrower
+      ($0.4 \leq k_1 \leq 0.6$, $0.75 \leq b \leq 1.0$), and scores fall
+      off sharply for large $k_1$ combined with strong length
+      normalization.}
+    \label{fig:tuning-paragraph}
+  \end{subfigure}
+  \caption{BM25 nDCG@5 on 1,600 Train tuning queries. Rows and columns are
+    the tested values, not to scale; scores are rounded to three decimals.
+    Outlined cells mark the selected settings, which scored highest before
+    rounding.}
+  \label{fig:tuning}
 \end{figure}
 
 \subsection{Evaluation Setup}
@@ -343,10 +354,143 @@ paragraphs. We compare tuned and default parameters on the Study queries in Sect
 \label{sec:interface}
 
 \section{Evaluation Results}
-\subsection{Metrics}
+\label{sec:results}
+
+We report results on the 250 Study queries, using the metrics and significance 
+test described in Section~\ref{sec:eval}. We first compare TF-IDF and BM25 overall
+and by query difficulty (Section~\ref{sec:effectiveness}), then measure the effect
+of tuning BM25 (Section~\ref{sec:tuning-results}), summarize our manual judgments
+of the Test queries (Section~\ref{sec:annotation}), and report efficiency (Section~\ref{sec:efficiency}).
+Explanations of these results are deferred to Section~\ref{sec:analysis}.
+\subsection{Effectiveness}
+\label{sec:effectiveness}
+\begin{table}[t]
+  \caption{Effectiveness on the 250 Study queries. Strict metrics count only fully
+  relevant (grade 2) documents and are averaged over the 238 queries that have one.
+  $^{*}$ marks a significant improvement of BM25 over TF-IDF on the same collection
+  (paired t-test, $p < 0.05$).}
+  \label{tab:main}
+  \small
+  \begin{tabular}{lrrrr}
+    \toprule
+    & \multicolumn{2}{c}{Papers} & \multicolumn{2}{c}{Paragraphs} \\
+    \cmidrule(lr){2-3} \cmidrule(l){4-5}
+    & TF-IDF & BM25 & TF-IDF & BM25 \\
+    \midrule
+    nDCG           & 0.397 & \textbf{0.582}$^{*}$ & 0.301 & \textbf{0.474}$^{*}$ \\
+    nDCG@5         & 0.313 & \textbf{0.514}$^{*}$ & 0.229 & \textbf{0.416}$^{*}$ \\
+    MRR            & 0.332 & \textbf{0.544}$^{*}$ & 0.298 & \textbf{0.516}$^{*}$ \\
+    P@5            & 0.094 & \textbf{0.137}$^{*}$ & 0.103 & \textbf{0.174}$^{*}$ \\
+    P@10           & 0.058 & \textbf{0.080}$^{*}$ & 0.067 & \textbf{0.107}$^{*}$ \\
+    \midrule
+    MRR (strict)   & 0.323 & \textbf{0.535}$^{*}$ & 0.249 & \textbf{0.450}$^{*}$ \\
+    P@5 (strict)   & 0.085 & \textbf{0.124}$^{*}$ & 0.070 & \textbf{0.115}$^{*}$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+BM25 significantly outperformed TF-IDF on every metric for both tasks (Table~\ref{tab:main}),
+improving nDCG@5 by 64\% on papers and 82\% on paragraphs. Absolute precision is low for
+both models, as most Study queries have only one to five judged documents, which caps P@10 
+well below 1. We analyze the sources of BM25's advantage in Section~\ref{sec:analysis}.
+
+\begin{table}[t]
+  \caption{nDCG@5 on Study queries by difficulty level.}
+  \label{tab:difficulty}
+  \small
+  \begin{tabular}{lrrr}
+    \toprule
+    & Easy (75) & Medium (125) & Hard (50) \\
+    \midrule
+    Papers, TF-IDF     & 0.399 & 0.331 & 0.137 \\
+    Papers, BM25       & 0.635 & 0.571 & 0.187 \\
+    Paragraphs, TF-IDF & 0.375 & 0.227 & 0.015 \\
+    Paragraphs, BM25   & 0.676 & 0.425 & 0.003 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Effectiveness falls sharply with query difficulty for both models
+(Table~\ref{tab:difficulty}). On hard queries, BM25's advantage over
+TF-IDF on papers narrows (nDCG@5 0.187 vs.\ 0.137), and on paragraphs, 
+neither model retrieves a judged relevant result for almost any hard query. 
+As Section~\ref{sec:annotation} shows, this partly reflects incomplete 
+judgments rather than retrieval failure alone.
+
+\subsection{Effect of Tuning}
+\label{sec:tuning-results}
+
+\begin{table}[t]
+  \caption{BM25 with tuned parameters (Section~\ref{sec:bm25}) versus the
+    Anserini default ($k_1 = 0.9$, $b = 0.4$) on Study queries.
+    $^{*}$ marks a significant difference (paired t-test, $p < 0.05$);
+    per-difficulty columns are nDCG@5 and were not tested separately.}
+  \label{tab:tuning-study}
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{lrrrrrr}
+    \toprule
+    & & & & \multicolumn{3}{c}{nDCG@5 by difficulty} \\
+    \cmidrule(l){5-7}
+    & nDCG & MRR & nDCG@5 & Easy & Med. & Hard \\
+    \midrule
+    Papers, default      & 0.542 & 0.501 & 0.489 & 0.649 & 0.514 & 0.185 \\
+    Papers, tuned        & 0.582$^{*}$ & 0.544$^{*}$ & 0.514 & 0.635 & 0.571 & 0.187 \\
+    \midrule
+    Paragraphs, default  & 0.457 & 0.487 & 0.394 & 0.684 & 0.378 & 0.000 \\
+    Paragraphs, tuned    & 0.474$^{*}$ & 0.516$^{*}$ & 0.416$^{*}$ & 0.676 & 0.425 & 0.003 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Tuning BM25's parameters significantly improved nDCG and MRR on both collections, and
+nDCG@5 on paragraphs (Table~\ref{tab:tuning-study}). On papers, the
+nDCG@5 gain was not significant. The improvements came almost entirely
+from medium-difficulty queries: easy queries were already ranked well
+under the default parameters, and hard queries failed under both.
+
+\subsection{Test Annotation}
+\label{sec:annotation}
+We judged the top-ranked BM25 paragraph for each of the 250 Test queries
+on the three-point scale (Table~\ref{tab:annotation}). Annotators judged
+the paragraph alone, using the paper title only as context. The
+top-ranked paragraph was judged relevant (grade 1 or 2) for 78.8\% of
+queries and fully relevant for 41.6\%, falling from 93.3\% of easy
+queries to 44.0\% of hard queries.
+
+\begin{table}[t]
+  \caption{Our judgments of BM25's top-ranked paragraph for the 250 Test
+    queries.}
+  \label{tab:annotation}
+  \small
+  \begin{tabular}{lrrrr}
+    \toprule
+    & Grade 0 & Grade 1 & Grade 2 & Relevant \\
+    \midrule
+    Easy (75)     & 5  & 21 & 49  & 93.3\% \\
+    Medium (125)  & 20 & 57 & 48  & 84.0\% \\
+    Hard (50)     & 28 & 15 & 7   & 44.0\% \\
+    \midrule
+    All (250)     & 53 & 93 & 104 & 78.8\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+These rates are much higher than BM25's P@1 of 0.452 on Study paragraphs
+according to the official judgments, but most of the difference is
+explained by incomplete judgments rather than by disagreement. In Study,
+BM25's top-ranked paragraph was unjudged, and therefore counted as
+non-relevant, for 55\% of queries overall and for all 50 hard queries,
+whereas our annotation judged each retrieved paragraph directly. Where
+judgments exist, the two agree closely: the top-ranked paragraph is fully
+relevant for 35.2\% of Study queries and 41.6\% of Test queries in our
+judgments, with most of the remaining gap in partial relevance. Study
+scores for paragraph retrieval, and especially near-zero scores on hard
+queries, should therefore be read as lower bounds.
+
 \subsection{Efficiency}
 \label{sec:efficiency}
-\begin{table}[h]
+\begin{table}[t]
   \caption{Indexing, startup, and query times, and index sizes. Query
     times are averages over the 250 Study queries (pure-Python BM25: 50
     queries) and exclude query tokenization; startup includes loading the
@@ -406,7 +550,104 @@ would reduce both memory use and startup time.
 \section{Results Analysis}
 \label{sec:analysis}
 
-\begin{table}[h]
+\subsection{Why BM25 Outperforms TF-IDF}
+\label{sec:why-bm25}
+
+Because both models share the same preprocessing pipeline and indexes, their
+differences come entirely from how they weight and combine terms. Three properties
+of the scoring functions are relevant. First, cosine-normalized TF-IDF includes
+the IDF in both the query weight and the document weight, so a matching term 
+contributes roughly in proportion to $\mathit{idf}_t^2$, and rare terms tend to dominate 
+since the ratio of IDF values between them and more common terms gets amplified. 
+For example, ``sam'' has 4.6 times the IDF of ``view'' in our paper collection, but contributes 
+about 21 times as much once squared. BM25 counts IDF once. Second, TF-IDF's term frequency 
+weight $1 + \log \mathit{tf}$ grows without bound, while BM25's saturates at a rate set by 
+$k_1$. Third, TF-IDF normalizes by the length of the document's weight vector, which grows 
+with the number of distinct terms, while BM25 normalizes relative to the average document
+length, with a strength set by $b$.
+
+BM25's advantage does not come from tuning: with Anserini's default parameters 
+($k_1 = 0.9$, $b = 0.4$; \cite{yang2017anserini}) it still outperformed TF-IDF
+on both collections (nDCG 0.542 vs.\ 0.397 on papers, 0.457 vs.\ 0.301 on paragraphs;
+Table~\ref{tab:tuning-study}), and tuning added only about 0.02 to 0.04 on top of that.
+Nor is it an artifact of our preprocessing: TF-IDF on papers does best without stemming
+(Section~\ref{sec:ablation}), yet even then it reaches nDCG@5 of 0.379, against 0.542 for
+BM25 in the same configuration. 
+
+Query 2007 shows how squared IDF weighting can hurt TF-IDF: \textit{``How does
+the performance of multi-view mask learning compare to the masks generated by
+SAM from a single 2D image?''} The relevant paper (3,017 tokens) matches every
+query term, including ``multi'', ``view'', and ``compare''. TF-IDF instead ranks
+first a short paper on SAM itself (934 tokens) that lacks those terms. Because 
+``sam'' is the rarest query term ($\mathit{df} = 734$), that single term contributes
+0.167 to the SAM paper's TF-IDF score, more than the relevant paper's entire score
+(0.135). In BM25, ``sam'' counts once and saturates, so 46 occurrences are worth only 
+slightly more than 14 (18.5 vs.\ 15.2), and the relevant paper's coverage of the remaining
+terms ranks it first.
+
+The same mechanisms can also favor TF-IDF. For query 2112, \textit{``What is the
+reformulated wave function for Cooper pairs in the BCS ground state for 
+spin-orbit-coupled Fermi gases?''}, TF-IDF ranks the relevant paper first while BM25 
+places it third. Both candidates contain every query term, but BM25's top result is 
+a 6,356-token paper that repeats ``Fermi'' 79 times and ``gases'' 18 times. With 
+$k_1 = 4.0$, BM25's term weight saturates slowly, so this repetition outweighs the 
+relevant paper's stronger match on the most specific term, ``BCS'' (26 vs.\ 12 
+occurrences). TF-IDF's logarithmic term frequency dampens the repetition, its squared
+IDF emphasizes ``BCS'', and its cosine normalization penalizes the longer paper. The 
+large $k_1$ chosen for papers is best on average, but this query shows its cost.
+
+BM25's relative advantage is larger on paragraphs than on papers (nDCG@5 +82\% vs.\ 
++64\%), contrary to what one might expect if long documents were the main obstacle
+for TF-IDF. A likely contributor is that cosine normalization favors very short 
+documents: a paragraph of a few tokens containing one query term has a high cosine
+score, and 230,782 paragraphs have fewer than 10 tokens after cleaning (Table~\ref{tab:cleaning}).
+Squared IDF weighting also gives rare tokens, including residual extraction noise such as 
+merged words, outsized influence.
+
+\subsection{When Term Matching Succeeds and Fails}
+\label{sec:failures}
+
+Both models succeed when a query contains distinctive terms that also appear in the 
+relevant documents, typically the name of a method, dataset, or system. For query 2002 
+(``How can C-Uniform trajectories be created using random-walks and optimization methods?''), 
+BM25 ranks first the paper titled ``C-Uniform Trajectory Sampling For Fast Motion Planning'', 
+and queries naming systems such as O-RAN or SAM behave similarly. Easy queries, which tend to
+reuse the vocabulary of their source documents, reach nDCG@5 of 0.635 (papers) and 0.676 (paragraphs)
+with BM25.
+
+Effectiveness falls sharply on hard queries (Table~\ref{tab:difficulty}), for two reasons. 
+The first is vocabulary mismatch: hard queries often paraphrase technical terms in general 
+language, which exact term matching cannot bridge. Query 2011 asks: ``Why is it harder to 
+identify specific heart rhythm abnormalities using wrist-worn optical sensors than with 
+electrical cardiac monitoring, and what complicates this process in wearable devices?'' Its
+fully relevant paragraph answers exactly this, but in technical terms (``arrhythmias'', 
+``PPG'', ``ECG'', ``smartwatch''); after stemming, it shares a single content term with the 
+query (``rhythm''), and none of its paper's five judged paragraphs appears in BM25's top 100. 
+BM25's top-ranked paragraph instead shares seven terms with the query (``wearable'', ``monitoring'', 
+``heart'', ``electrical'', ``cardiac'', ``abnormalities'', ``identify''), yet discusses identifying 
+\emph{individuals} from ECG signals. Paper retrieval suffers less: the relevant paper ranks 
+12th, because its many paragraphs together share more terms with the query than any single 
+paragraph does. This is why hard queries hurt paragraph retrieval most. 
+
+Our Test annotations showed related failures. Shared words with different meanings, such as 
+``epsilon'' as machine precision rather than a variable, ``independent'' in independent sets 
+rather than conditional independence, and ``influence'' in influence functions rather than outliers, 
+produced top-ranked paragraphs from unrelated fields. Preprocessing contributes as well: queries 
+that spell out notation (``the ratio of epsilon to kappa'') lose their matching terms in 
+documents because inline math is removed (Section~\ref{sec:ablation}), and extraction errors 
+appear in queries too, as in Test query 2251's ``sustainedvowel''.
+
+The second reason is incomplete judgments. In Study, BM25's top-ranked paragraph was 
+unjudged for all 50 hard queries (Section~\ref{sec:annotation}), so these queries score 
+near zero even when a retrieved paragraph is useful. In our judgments of Test queries, 
+44\% of top-ranked paragraphs for hard queries were relevant, mostly partially. The 
+official scores therefore understate performance on hard queries, although genuine failures 
+such as query 2011 remain. Bridging paraphrases requires matching meaning rather than terms, 
+which motivates the use of neural retrieval models in future work.
+
+\subsection{Preprocessing Ablation}
+\label{sec:ablation}
+\begin{table}[t]
   \caption{Preprocessing ablation on Study queries, nDCG@5, with BM25
     parameters fixed to the values tuned for the main configuration
     (math removed, Snowball stemming). Comparing the first two columns
@@ -438,19 +679,15 @@ spelled-out notation, such as ``epsilon'' or ``kappa'', for kept math
 tokens to provide a few additional correct matches. Math removal is a 
 reasonable tradeoff for a 31.6\% reduction in collection size.
 
-Stemming mattered more, in opposite directions for our two strongest
-effects. It significantly improved paragraph BM25 on every metric
-(nDCG@5 0.378 to 0.416, MRR 0.457 to 0.509), but significantly reduced
-paper TF-IDF on every metric (nDCG@5 0.379 to 0.320); it had no
-significant effect on paper BM25 or paragraph TF-IDF. A plausible
-explanation is that short paragraphs gain from the additional matches
-stemming creates, while for long papers under cosine normalization,
-conflated stems (e.g., ``generat'' for ``generate'', ``generation'', and
-``generative'') make common stems even more frequent and dilute term
-weights. Regardless, it is important to note that even TF-IDF's best 
-configuration (no stemming, 0.379 nDCG@5) stays far below BM25 (0.542).
-This implies that the reasons for BM25's better performance over TF-IDF
-do not necessarily originate from the preprocessing pipeline.
+Stemming mattered more, and in opposite directions. It significantly improved 
+paragraph BM25 on every metric (nDCG@5 0.378 to 0.416, MRR 0.457 to 0.509), but 
+significantly reduced paper TF-IDF on every metric (nDCG@5 0.379 to 0.320), with 
+no significant effect on paper BM25 or paragraph TF-IDF. A plausible explanation 
+is that short paragraphs gain from the additional matches stemming creates, while 
+for long papers under cosine normalization, conflated stems (e.g., ``generat'' for 
+``generate'', ``generation'', and ``generative'') make common stems even more frequent 
+and dilute term weights. Even without stemming, however, TF-IDF remains far below 
+BM25 (Section~\ref{sec:why-bm25})
 \section{Conclusion}
 
 \bibliographystyle{ACM-Reference-Format}
