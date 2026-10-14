@@ -30,7 +30,17 @@
 \email{nathaniel.serrano@maine.edu}
 
 \begin{abstract}
-This project presents IR-Rangers, an information retrieval system for searching a collection of arXiv research papers. The system uses text preprocessing and inverted indexing to support document retrieval at both the paper and paragraph levels. We implemented and evaluated TF-IDF and BM25 ranking approaches using relevance judgments and standard information retrieval evaluation metrics. We also developed a web-based search interface using React and FastAPI, allowing users to submit queries, view ranked research papers, explore relevant vocabulary, and receive title-based autocomplete suggestions. Through this project, we examined the effectiveness of traditional retrieval techniques and integrated indexing, ranking, evaluation, and user interface components into a functional research paper search system.
+We present IR-Rangers, a retrieval system for 34,308 arXiv papers that supports both paper 
+and paragraph retrieval. We preprocess a noisy extracted collection, removing inline 
+mathematics and other markup to reduce it by 31.6\%, and compare TF-IDF with BM25, 
+whose parameters we tune separately for each task. On 250 judged queries, BM25 significantly 
+outperforms TF-IDF on every metric, improving nDCG@5 by 64\% for papers and 82\% for 
+paragraphs. Our analysis shows how TF-IDF's squared IDF weighting and BM25's term 
+saturation favor different documents, and that hard queries, which paraphrase technical 
+terminology, defeat exact term matching, especially for paragraphs. Manual judgments of our 
+top-ranked Test paragraphs indicate that incomplete official judgments understate performance 
+on these queries. A vectorized BM25 implementation answers queries in 9--74~ms, and a web interface 
+supports searching both collections with either model.
 \end{abstract}
 
 \keywords{information retrieval, BM25, TF-IDF, scientific document
@@ -197,9 +207,9 @@ how these paragraphs are handled in Section~\ref{sec:docrep}.
 \label{sec:docrep}
 We construct two separate document collections from the processed JSONL files, namely one for paper retrieval and another for paragraph retrieval. In the paper collection, each document consists of its title and all non-empty paragraphs. This means we omit the separate abstract field. We did this because the first paragraph typically contains the abstract and usually has fewer extraction errors, such as merged words. This helps avoid duplicating the abstract within the same document. 
 
-For paragraph retrieval, we treat each non-empty paragraph as an individual document. Of the 2,275,574 original paragraphs, 8,389 become empty after preprocessing, so we exclude them. This leaves us with 2,267,185 indexed paragraphs. We keep the first paragraph of each paper because abstracts can be relevant to retrieval results, as demonstrated by paragraph 2409.12643\_1 in the Train relevance judgments. 
+For paragraph retrieval, we treat each non-empty paragraph as an individual document. Of the 2,275,574 original paragraphs, 8,389 become empty after preprocessing, so we exclude them. This leaves us with 2,267,185 indexed paragraphs. We keep the first paragraph of each paper because abstract paragraphs can themselves be judged relevant, as demonstrated by paragraph 2409.12643\_1 in the Train relevance judgments. 
 
-Essentially, both collections use inverted indexes that map each term to a postings list containing document numbers and term frequencies. The indexes also store individual document lengths and average document length, supporting the retrieval models described in Sections 2.3 and 2.4. Each index is built from its processed JSONL collection and saved as a JSON file. This means subsequent runs can load the existing index without rebuilding it. The paper and paragraph indexes occupy 242 MB and 974 MB on disk, with loading times of approximately 9.2 and 29.0 seconds (Table 7).
+Both collections use inverted indexes that map each term to a postings list containing document numbers and term frequencies. The indexes also store individual document lengths and average document length, supporting the retrieval models described in Sections\ref{sec:tfidf} and~\ref{sec:bm25}. Each index is built from its processed JSONL collection and saved as a JSON file. This means subsequent runs can load the existing index without rebuilding it. The paper and paragraph indexes occupy 242 MB and 974 MB on disk, with loading times of approximately 9.2 and 29.0 seconds (Table~\ref{tab:efficiency}).
 \subsection{TF-IDF}
 \label{sec:tfidf}
 \subsection{BM25}
@@ -358,7 +368,7 @@ paragraphs. We compare tuned and default parameters on the Study queries in Sect
 
 \subsection{Search Interface}
 \label{sec:interface}
-We developed a web-based search interface that lets users interact with the paper retrieval system. The interface uses a React frontend connected to a Python FastAPI through HTTP endpoints. At startup, the backend loads the previously constructed paper index and then initializes the BM25 retrieval model using the tuned parameters described in Section 2.4 ($k_1 = 4.0$, $b = 0.75$). Search queries use the same preprocessing configuration as the indexed documents. We did this to try to keep consistency between query terms and index vocabulary. The backend then retrieves and returns the top-ranked papers, which are seen in the interface. 
+We developed a web-based search interface that lets users interact with the paper retrieval system. The interface uses a React frontend connected to a FastAPI through HTTP endpoints. At startup, the backend loads the previously constructed paper index and then initializes the BM25 retrieval model using the tuned parameters described in Section~\ref{sec:bm25} ($k_1 = 4.0$, $b = 0.75$). Search queries use the same preprocessing configuration as the indexed documents. We did this to try to keep consistency between query terms and index vocabulary. The backend then retrieves and returns the top-ranked papers, which are seen in the interface. 
 
 To present search results, we generate a separate metadata file which has paper identifiers, titles, publication information, and abstracts. Because the original abstract fields can contain extraction problems, the metadata generation process looks to prioritize the first paragraph of each paper. This is because we generally see a cleaner version of the abstract. Search results display paper titles alongside excerpts selected from their abstracts. So rather than truncating abstracts at a fixed character position, our backend identifies sentences containing query terms to provide excerpts that better reflect the relevance of each result. 
 
@@ -705,13 +715,22 @@ is that short paragraphs gain from the additional matches stemming creates, whil
 for long papers under cosine normalization, conflated stems (e.g., ``generat'' for 
 ``generate'', ``generation'', and ``generative'') make common stems even more frequent 
 and dilute term weights. Even without stemming, however, TF-IDF remains far below 
-BM25 (Section~\ref{sec:why-bm25})
+BM25 (Section~\ref{sec:why-bm25}).
 \section{Conclusion}
-In this project we developed IR-Rangers, an information retrieval system designed to search a collection of arXiv research papers. Our system uses text preprocessing, inverted indexing, and two retrieval approaches, TF-IDF and BM25, to rank documents based on user queries. We explored both paper-level and paragraph-level document data and evaluated retrieval effectiveness using relevance judgments and ranking metrics. 
+We built IR-Rangers, a retrieval system for arXiv papers and paragraphs, and compared TF-IDF 
+with BM25 over shared preprocessing and indexes. BM25 significantly outperformed TF-IDF on 
+both tasks, an advantage that did not depend on tuning or preprocessing and that we traced 
+to how the two models weight rare terms, repeated terms, and document length in their 
+scoring algorithms. Tuning showed that papers and paragraphs need very different parameters, 
+and our ablation showed that the best preprocessing choice, particularly stemming, depends on the 
+collection and model.
 
-We also developed a web-based search interface using React and FastAPI. The interface lets users search for research papers, view ranked results, explore relevant vocabulary, and get title suggestions as they type. These features were designed to make the retrieval system more accessible and easier to use. 
-
-Our system demonstrates how traditional information retrieval techniques can support research paper search. Keeping this in mind, we admit there are opportunities for improvement. Future work might include exploring additional ranking methods, improving query suggestions, and expanding the search interface to support paragraph-level retrieval. Overall, this project provided practical experience in building, evaluating, and integrating the components of an information retrieval system. 
+Our analysis also exposed the limits of exact term matching. Hard queries that paraphrase technical 
+fail, especially for paragraphs, although our manual judgments indicate that incomplete official 
+judgments understate performance on them. Future work includes semantic retrieval models that 
+can bridge such paraphrases, which the next phases of this project will explore; choosing preprocessing 
+per collection; evaluating BM25 variants designed for long documents; and storing index as compact 
+arrays to reduce memory use and startup time.
 
 \bibliographystyle{ACM-Reference-Format}
 \bibliography{references}
