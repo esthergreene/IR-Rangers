@@ -82,6 +82,8 @@ def main():
     empty_paragraph_ids = []
     unreadable_files = []
 
+    print(f"Processing Collection found at {args.data}...")
+
     start = time.perf_counter()
     with open(paragraphs_tmp, "w", encoding="utf-8") as paragraphs_out:
         for file_number, path in enumerate(files, start=1):
@@ -158,7 +160,7 @@ def main():
     with open(args.output / "manifest.json", "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
-    print(f"Wrote {counts['paragraphs']:,} paragraphs from {counts['papers']:,} papers"
+    print(f"Wrote {counts['paragraphs']:,} paragraphs from {counts['papers']:,} papers "
           f"to {args.output} in {elapsed:.1f}s")
     print(f"Skipped {len(empty_paragraph_ids):,} empty paragraphs, "
           f"{counts['empty_papers']:,} papers with no paragraphs, "
