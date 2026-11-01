@@ -2,8 +2,7 @@
 # Everything under data/raw is re-downloaded by scripts/setup.sh, and everything
 # under data/processed is rebuilt by the scripts in src/ and scripts/.
 data/raw
-data/processed/
-data/processed_sample/
+data/processed*/
 
 # ── Model artifacts and run outputs ─────────────────────────────────────────
 checkpoints/
