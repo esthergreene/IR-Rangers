@@ -1,7 +1,91 @@
-import json
 from pathlib import Path
-import numpy as np
-from scipy.sparse import csr_matrix, save_npz, load_npz
+import json
+import torch
+from transformers import AutoModelForMaskedLM, AutoTokenizer
+from src.common.paragraphs import iter_paragraph_batches 
+
+class SpladeEncoder:
+    def __init__(self, model_name_or_path="naver/splade-cocondenser-selfdistil", device="cpu"): # Running on CPU because GPU memory kept running out
+        self.device = device
+        print(f"Loading SPLADE model on {self.device}...")
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        self.model = AutoModelForMaskedLM.from_pretrained(model_name_or_path).to(self.device)
+        self.model.eval()
+
+    def encode(self, texts, with_title=False):
+        """
+        Encodes a list of texts into sparse vector dictionaries (token_id -> weight).
+        """
+        inputs = self.tokenizer(
+            texts, 
+            padding=True, 
+            truncation=True, 
+            max_length=256, 
+            return_tensors="pt"
+        ).to(self.device)
+
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+        
+        # SPLADE aggregation: max over sequence length of log(1 + ReLU(logits))
+        # (Exact implementation details depend on the specific SPLADE variant you use)
+        logits = outputs.logits
+        relu_log = torch.log(1 + torch.relu(logits))
+        # Max pooling across the attention mask length dimension
+        attention_mask = inputs["attention_mask"].unsqueeze(-1)
+        weights = torch.max(relu_log * attention_mask, dim=1).values  # Shape: [batch_size, vocab_size]
+
+        sparse_vectors = []
+        # Extract non-zero weights per document in the batch
+        nz_indices = torch.nonzero(weights, as_tuple=False)
+        
+        # Group non-zeros by batch item
+        batch_dict = {i: {} for i in range(len(texts))}
+        for row, col in nz_indices:
+            weight = weights[row, col].item()
+            if weight > 0:
+                batch_dict[row.item()][col.item()] = weight
+
+        for i in range(len(texts)):
+            sparse_vectors.append(batch_dict[i])
+
+        return sparse_vectors
+
+
+def build_index_with_encoder(paragraphs_path, model_name_or_path="naver/splade-cocondenser-selfdistil", batch_size=16, limit=None):
+    """
+    Streams paragraphs from jsonl, encodes them in batches, and builds the SparseIndexer.
+    """
+    index = SparseIndexer()
+    encoder = SpladeEncoder(model_name_or_path)
+    
+    docs = {}
+    print("Encoding paragraphs and building index...")
+    
+    # Changed with_title=True to with_title=False since records lack a 'title' key
+    for doc_ids, texts in iter_paragraph_batches(paragraphs_path, batch_size=batch_size, with_title=False, limit=limit):
+        # Encode batch into list of sparse dicts
+        sparse_vectors = encoder.encode(texts)
+        
+        for doc_id, s_vec in zip(doc_ids, sparse_vectors):
+            docs[doc_id] = s_vec
+
+    print(f"Total encoded documents loaded: {len(docs)}")
+    index.build_index(docs)
+    return index
+
+def load_or_build_index_safe(file_path, collection_path=None, force_reindex=False, model_name=None):
+    file_path = Path(file_path)
+    
+    if force_reindex or not file_path.exists():
+        if collection_path is None:
+            raise ValueError("Collection path required to build index.")
+        
+        index = build_index_with_encoder(collection_path, model_name_or_path=model_name)
+        index.save_index(file_path)
+        return index
+
+    return SparseIndexer.load_index(file_path)
 
 class SparseIndexer:
     def __init__(self):
@@ -99,6 +183,9 @@ class SparseIndexer:
 
         # Save companion metadata (doc_ids mapping)
         meta_path = file_path.with_suffix(".meta.json")
+        if len(self.doc_ids) == 0:
+            raise ValueError("Should not happen!")
+
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(self.doc_ids, f)
 
@@ -159,4 +246,9 @@ if __name__ == "__main__":
     collection_path = processed_dir / "paragraphs.jsonl"
 
     print("Loading or building sparse paragraph index...")
-    paragraph_index = load_or_build_index(index_path, collection_path)
+    paragraph_index = load_or_build_index_safe(
+        file_path=index_path, 
+        collection_path=collection_path, 
+        model_name="naver/splade-cocondenser-selfdistil",
+        force_reindex=True
+    )
