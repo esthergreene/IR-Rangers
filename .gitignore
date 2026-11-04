@@ -3,9 +3,11 @@
 # under data/processed is rebuilt by the scripts in src/ and scripts/.
 data/raw
 data/processed*/
+/data
 
 # ── Model artifacts and run outputs ─────────────────────────────────────────
-checkpoints/
+checkpoints
+/checkpoints
 runs/
 results/
 *.faiss
