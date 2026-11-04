@@ -1,254 +1,276 @@
-from pathlib import Path
+"""
+Building and searching the SPLADE sparse paragraph index (Part 2).
+
+Each paragraph in data/processed_neural/paragraphs.jsonl is encoded by a
+SPLADE model into a sparse vector over the model's vocabulary (30,522
+WordPiece terms), and the vectors are stored as one scipy sparse matrix:
+one row per paragraph, one column per vocabulary term. Row i is the i-th
+paragraph in the file.
+
+The matrix is stored column by column (CSC), so a search only reads the
+columns of the query's terms, which works like term-at-a-time scoring over
+an inverted index. Scores are dot products, as SPLADE is trained.
+
+Saved files:
+    sparse_paragraph_index.npz          the matrix
+    sparse_paragraph_index.meta.json    paragraph IDs (row order) and the
+                                        settings queries must be encoded with
+
+Usage, from the repository root:
+    python -m src.index.sparse_indexer
+    python -m src.index.sparse_indexer --limit 2000 \
+        --index data/processed_neural/sparse_paragraph_index_sample.npz
+"""
+import argparse
 import json
+import time
+from pathlib import Path
+
+import numpy as np
 import torch
+from scipy.sparse import csr_matrix, load_npz, save_npz, vstack
 from transformers import AutoModelForMaskedLM, AutoTokenizer
-from src.common.paragraphs import iter_paragraph_batches 
+
+from src.common.paragraphs import iter_paragraph_batches
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PROCESSED_DIR = REPO_ROOT / "data" / "processed_neural"
+DEFAULT_MODEL = "naver/splade-cocondenser-selfdistil"
+DEFAULT_MAX_LENGTH = 256
+
 
 class SpladeEncoder:
-    def __init__(self, model_name_or_path="naver/splade-cocondenser-selfdistil", device="cpu"): # Running on CPU because GPU memory kept running out
-        self.device = device
-        print(f"Loading SPLADE model on {self.device}...")
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-        self.model = AutoModelForMaskedLM.from_pretrained(model_name_or_path).to(self.device)
+    """Encodes texts into SPLADE sparse vectors, on the GPU when one is available."""
+
+    def __init__(self, model_name=DEFAULT_MODEL, device=None, max_length=DEFAULT_MAX_LENGTH):
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.model_name = model_name
+        self.max_length = max_length
+        # Half precision halves GPU memory use and is faster; CPUs do not benefit.
+        self.use_fp16 = torch.device(self.device).type == "cuda"
+
+        print(f"Loading {model_name} on {self.device}...")
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForMaskedLM.from_pretrained(model_name).to(self.device)
         self.model.eval()
 
-    def encode(self, texts, with_title=False):
+    @property
+    def vocab_size(self):
+        return self.model.config.vocab_size
+
+    def encode(self, texts):
         """
-        Encodes a list of texts into sparse vector dictionaries (token_id -> weight).
+        Encode texts into SPLADE vectors.
+
+        Args:
+            texts (list of str): Paragraphs or queries, already cleaned.
+
+        Returns:
+            csr_matrix: One row per text, one column per vocabulary term.
         """
         inputs = self.tokenizer(
-            texts, 
-            padding=True, 
-            truncation=True, 
-            max_length=256, 
-            return_tensors="pt"
+            texts,
+            padding=True,
+            truncation=True,
+            max_length=self.max_length,
+            return_tensors="pt",
         ).to(self.device)
 
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-        
-        # SPLADE aggregation: max over sequence length of log(1 + ReLU(logits))
-        # (Exact implementation details depend on the specific SPLADE variant you use)
-        logits = outputs.logits
-        relu_log = torch.log(1 + torch.relu(logits))
-        # Max pooling across the attention mask length dimension
-        attention_mask = inputs["attention_mask"].unsqueeze(-1)
-        weights = torch.max(relu_log * attention_mask, dim=1).values  # Shape: [batch_size, vocab_size]
+        with torch.no_grad(), torch.autocast(device_type=torch.device(self.device).type,
+                                             dtype=torch.float16, enabled=self.use_fp16):
+            logits = self.model(**inputs).logits  # [batch, seq_len, vocab]
 
-        sparse_vectors = []
-        # Extract non-zero weights per document in the batch
-        nz_indices = torch.nonzero(weights, as_tuple=False)
-        
-        # Group non-zeros by batch item
-        batch_dict = {i: {} for i in range(len(texts))}
-        for row, col in nz_indices:
-            weight = weights[row, col].item()
-            if weight > 0:
-                batch_dict[row.item()][col.item()] = weight
+            # SPLADE max pooling: max over tokens of log(1 + ReLU(logits)), with
+            # padding masked out. Done in place, since the logits are the largest
+            # tensor here and each copy would take another full-size block of memory.
+            weights = logits.relu_().log1p_()
+            weights.mul_(inputs["attention_mask"].unsqueeze(-1).to(weights.dtype))
+            weights = weights.amax(dim=1)  # [batch, vocab]
 
-        for i in range(len(texts)):
-            sparse_vectors.append(batch_dict[i])
+        # One transfer per batch, rather than one per nonzero weight.
+        return csr_matrix(weights.float().cpu().numpy())
 
-        return sparse_vectors
-
-
-def build_index_with_encoder(paragraphs_path, model_name_or_path="naver/splade-cocondenser-selfdistil", batch_size=16, limit=None):
-    """
-    Streams paragraphs from jsonl, encodes them in batches, and builds the SparseIndexer.
-    """
-    index = SparseIndexer()
-    encoder = SpladeEncoder(model_name_or_path)
-    
-    docs = {}
-    print("Encoding paragraphs and building index...")
-    
-    # Changed with_title=True to with_title=False since records lack a 'title' key
-    for doc_ids, texts in iter_paragraph_batches(paragraphs_path, batch_size=batch_size, with_title=False, limit=limit):
-        # Encode batch into list of sparse dicts
-        sparse_vectors = encoder.encode(texts)
-        
-        for doc_id, s_vec in zip(doc_ids, sparse_vectors):
-            docs[doc_id] = s_vec
-
-    print(f"Total encoded documents loaded: {len(docs)}")
-    index.build_index(docs)
-    return index
-
-def load_or_build_index_safe(file_path, collection_path=None, force_reindex=False, model_name=None):
-    file_path = Path(file_path)
-    
-    if force_reindex or not file_path.exists():
-        if collection_path is None:
-            raise ValueError("Collection path required to build index.")
-        
-        index = build_index_with_encoder(collection_path, model_name_or_path=model_name)
-        index.save_index(file_path)
-        return index
-
-    return SparseIndexer.load_index(file_path)
 
 class SparseIndexer:
-    def __init__(self):
-        self.matrix = None 
-        self.doc_ids = [] 
-        self.doc_id_to_row = {}
+    """A paragraph x vocabulary matrix of SPLADE weights, searched by dot product."""
 
-    def build_index(self, encoded_documents):
+    def __init__(self, matrix=None, doc_ids=None, settings=None):
+        self.matrix = matrix              # scipy CSC matrix, [num_docs, vocab_size]
+        self.doc_ids = doc_ids or []      # row number -> doc_id
+        self.settings = settings or {}    # model, max_length, with_title used to encode
+
+    def search(self, query_vector, k=100):
         """
-        Build a CSR matrix index from encoded documents efficiently using arrays.
-        
+        Return the k highest-scoring paragraphs for an encoded query.
+
         Args:
-            encoded_documents (dict): A dictionary where keys are document IDs 
-                                      and values are sparse vectors (token_id -> weight).
-        """
-        rows = []
-        cols = []
-        data = []
+            query_vector (csr_matrix or dict): The query's SPLADE vector, as
+                one row from SpladeEncoder.encode() or a token_id -> weight dict.
+            k (int): Number of results to return.
 
-        for row_idx, (doc_id, sparse_vector) in enumerate(encoded_documents.items()):
-            self.doc_ids.append(doc_id)
-            self.doc_id_to_row[doc_id] = row_idx
-
-            for token_id, weight in sparse_vector.items():
-                if weight > 0:
-                    rows.append(row_idx)
-                    cols.append(int(token_id))
-                    data.append(float(weight))
-
-        if rows:
-            # Determine column dimension dynamically based on max token ID encountered
-            num_cols = max(cols) + 1 if cols else 0
-            self.matrix = csr_matrix(
-                (data, (rows, cols)), 
-                shape=(len(self.doc_ids), num_cols), 
-                dtype=np.float32
-            )
-        else:
-            self.matrix = csr_matrix((0, 0), dtype=np.float32)
-
-    def search(self, query_vector, k=10):
-        """
-        Search the index using matrix multiplication and top-k argpartition.
-        
-        Args:
-            query_vector (dict or np.ndarray): Token weights for the query.
-            k (int): Number of top results to return.
-            
         Returns:
-            list of tuples: (doc_id, score) sorted descending by score.
+            list: (doc_id, score) pairs, best first. Paragraphs sharing no term
+                with the query score 0 and are left out, so there may be fewer than k.
         """
         if self.matrix is None or self.matrix.shape[0] == 0:
             return []
 
-        # Convert query dict to a dense vector aligned with matrix columns
         if isinstance(query_vector, dict):
-            q_arr = np.zeros(self.matrix.shape[1], dtype=np.float32)
-            for tid, weight in query_vector.items():
-                if tid < self.matrix.shape[1]:
-                    q_arr[tid] = float(weight)
+            term_ids = np.fromiter(query_vector.keys(), dtype=np.int64)
+            term_weights = np.fromiter(query_vector.values(), dtype=np.float32)
         else:
-            q_arr = query_vector
-
-        # Matrix-vector multiplication -> scores per document row
-        scores = self.matrix @ q_arr
-
-        # Handle case where k is larger than the number of documents
-        k = min(k, len(self.doc_ids))
-        if k <= 0:
+            row = query_vector.tocsr()
+            term_ids, term_weights = row.indices, row.data.astype(np.float32)
+        if len(term_ids) == 0:
             return []
 
-        # Use argpartition to find top k indices efficiently
-        # argpartition doesn't fully sort, but puts the top k elements at the end
-        top_k_indices = np.argpartition(scores, -k)[-k:]
-        # Sort the top k indices explicitly by their scores descending
-        top_k_indices = top_k_indices[np.argsort(scores[top_k_indices])[::-1]]
+        # Only the query's terms contribute, so only their columns are read.
+        scores = self.matrix[:, term_ids] @ term_weights
 
-        results = []
-        for idx in top_k_indices:
-            score = float(scores[idx])
-            if score > 0: 
-                results.append((self.doc_ids[idx], score))
+        k = min(k, len(scores))
+        top = np.argpartition(scores, -k)[-k:]
+        top = top[np.argsort(-scores[top], kind="stable")]
 
-        return results
+        return [(self.doc_ids[i], float(scores[i])) for i in top if scores[i] > 0]
 
     def save_index(self, file_path):
         """
-        Save the CSR matrix using save_npz and companion metadata for doc_ids.
-        
+        Save the matrix (.npz) and the paragraph IDs and settings (.meta.json).
+
         Args:
-            file_path (str or Path): Base path to save the index (.npz).
+            file_path (str or Path): Path for the .npz file.
         """
+        if self.matrix is None or not self.doc_ids:
+            raise ValueError("No paragraphs were indexed, so there is nothing to save. "
+                             "Check that the collection path points to paragraphs.jsonl.")
+
         file_path = Path(file_path)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         save_npz(file_path, self.matrix)
 
-        # Save companion metadata (doc_ids mapping)
-        meta_path = file_path.with_suffix(".meta.json")
-        if len(self.doc_ids) == 0:
-            raise ValueError("Should not happen!")
+        with open(file_path.with_suffix(".meta.json"), "w", encoding="utf-8") as f:
+            json.dump({"settings": self.settings, "doc_ids": self.doc_ids}, f)
 
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(self.doc_ids, f)
-
-        print(f"Saved index to: {file_path} and {meta_path}")
+        print(f"Saved index to {file_path} ({self.matrix.nnz:,} nonzero weights)")
 
     @classmethod
     def load_index(cls, file_path):
-        """Load SparseIndexer from disk (.npz matrix + .meta.json)."""
+        """Load an index saved by save_index()."""
         file_path = Path(file_path)
-        instance = cls()
-        
-        instance.matrix = load_npz(file_path)
-
-        meta_path = file_path.with_suffix(".meta.json")
-        with open(meta_path, "r", encoding="utf-8") as f:
-            instance.doc_ids = json.load(f)
-
-        instance.doc_id_to_row = {doc_id: i for i, doc_id in enumerate(instance.doc_ids)}
-        return instance
+        with open(file_path.with_suffix(".meta.json"), "r", encoding="utf-8") as f:
+            meta = json.load(f)
+        return cls(load_npz(file_path).tocsc(), meta["doc_ids"], meta["settings"])
 
 
-def build_index_from_jsonl(file_path):
-    """Builds the index by streaming documents to avoid loading everything into a tuple list."""
-    index = SparseIndexer()
-    docs = {}
+def count_paragraphs(paragraphs_path):
+    """Read the paragraph count from the collection's manifest, or None if there is none."""
+    manifest_path = Path(paragraphs_path).with_name("manifest.json")
+    if not manifest_path.exists():
+        return None
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        return json.load(f)["counts"]["paragraphs"]
 
-    with open(file_path, "r", encoding="utf-8") as file:
-        for line in file:
-            record = json.loads(line)
-            doc_id = record.get("doc_id")
-            sparse_vector = record.get("sparse_vector")
-            if doc_id and sparse_vector:
-                docs[doc_id] = {int(k): v for k, v in sparse_vector.items()}
 
-    index.build_index(docs)
+def build_index(paragraphs_path, model_name=DEFAULT_MODEL, batch_size=64, limit=None,
+                device=None, with_title=False):
+    """
+    Encode every paragraph and build the index.
+
+    Each batch becomes a small sparse matrix, so memory use stays at about
+    8 bytes per nonzero weight rather than one Python object per weight.
+
+    Args:
+        paragraphs_path (str or Path): Cleaned-text paragraphs.jsonl.
+        model_name (str): Hugging Face SPLADE model.
+        batch_size (int): Paragraphs per batch; lower it if the GPU runs out of memory.
+        limit (int): Only encode the first N paragraphs (for quick tests).
+        device (str): "cuda" or "cpu"; defaults to the GPU when there is one.
+        with_title (bool): Put the paper title before each paragraph. Use the
+            same setting the model was trained with.
+
+    Returns:
+        SparseIndexer: The finished index.
+    """
+    encoder = SpladeEncoder(model_name, device=device)
+    total = limit or count_paragraphs(paragraphs_path)
+
+    chunks, doc_ids = [], []
+    start = time.perf_counter()
+    batches = iter_paragraph_batches(paragraphs_path, batch_size=batch_size,
+                                     with_title=with_title, limit=limit)
+    for batch_number, (batch_ids, texts) in enumerate(batches, start=1):
+        chunks.append(encoder.encode(texts))
+        doc_ids.extend(batch_ids)
+
+        if batch_number % 500 == 0:
+            elapsed = time.perf_counter() - start
+            rate = len(doc_ids) / elapsed
+            remaining = f", about {(total - len(doc_ids)) / rate / 60:.0f} min left" if total else ""
+            print(f"  {len(doc_ids):,} paragraphs ({rate:.0f}/s{remaining})")
+
+    if not doc_ids:
+        raise ValueError(f"No paragraphs were read from {paragraphs_path}.")
+
+    elapsed = time.perf_counter() - start
+    print(f"Encoded {len(doc_ids):,} paragraphs in {elapsed / 60:.1f} min "
+          f"({len(doc_ids) / elapsed:.0f}/s)")
+
+    # Stored by column, so a search reads only the query terms' columns.
+    matrix = vstack(chunks, format="csr").tocsc()
+    settings = {"model": model_name, "max_length": encoder.max_length, "with_title": with_title}
+    return SparseIndexer(matrix, doc_ids, settings)
+
+
+def load_or_build_index(index_path, paragraphs_path, force_reindex=False, **build_options):
+    """
+    Load a saved index, or build and save it if there is none (or force_reindex is set).
+
+    Args:
+        index_path (str or Path): Path of the .npz index file.
+        paragraphs_path (str or Path): Collection to build from if needed.
+        force_reindex (bool): Rebuild even if a saved index exists.
+        **build_options: Passed to build_index().
+
+    Returns:
+        SparseIndexer: The loaded or newly built index.
+    """
+    index_path = Path(index_path)
+    if index_path.exists() and not force_reindex:
+        print(f"Loading index from {index_path}...")
+        return SparseIndexer.load_index(index_path)
+
+    index = build_index(paragraphs_path, **build_options)
+    index.save_index(index_path)
     return index
 
 
-def load_or_build_index(file_path, collection_path=None, force_reindex=False):
-    file_path = Path(file_path)
-    
-    if force_reindex or not file_path.exists():
-        if collection_path is None:
-            raise ValueError("Collection path required to build index.")
-        
-        index = build_index_from_jsonl(collection_path)
-        index.save_index(file_path)
-        return index
-
-    return SparseIndexer.load_index(file_path)
+def parse_args():
+    parser = argparse.ArgumentParser(description="Build the SPLADE sparse paragraph index.")
+    parser.add_argument("--paragraphs", type=Path, default=PROCESSED_DIR / "paragraphs.jsonl",
+                        help="Cleaned-text paragraph collection")
+    parser.add_argument("--index", type=Path, default=PROCESSED_DIR / "sparse_paragraph_index.npz",
+                        help="Where to save the index (use a different path for --limit tests)")
+    parser.add_argument("--model", default=DEFAULT_MODEL, help="Hugging Face SPLADE model")
+    parser.add_argument("--batch-size", type=int, default=64,
+                        help="Paragraphs per batch (default: 64; lower it if the GPU runs out of memory)")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="Only encode the first N paragraphs (for quick tests)")
+    parser.add_argument("--device", default=None, help="cuda or cpu (default: GPU if available)")
+    parser.add_argument("--with-title", action="store_true",
+                        help="Put the paper title before each paragraph")
+    parser.add_argument("--force", action="store_true", help="Rebuild even if the index exists")
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
-    repo_root = Path(__file__).resolve().parents[2]
-    processed_dir = repo_root / "data" / "processed_neural"
-    
-    index_path = processed_dir / "sparse_paragraph_index.npz"
-    collection_path = processed_dir / "paragraphs.jsonl"
-
-    print("Loading or building sparse paragraph index...")
-    paragraph_index = load_or_build_index_safe(
-        file_path=index_path, 
-        collection_path=collection_path, 
-        model_name="naver/splade-cocondenser-selfdistil",
-        force_reindex=True
+    args = parse_args()
+    load_or_build_index(
+        args.index,
+        args.paragraphs,
+        force_reindex=args.force,
+        model_name=args.model,
+        batch_size=args.batch_size,
+        limit=args.limit,
+        device=args.device,
+        with_title=args.with_title,
     )
