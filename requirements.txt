@@ -1,12 +1,17 @@
-beautifulsoup4
-nltk
-pyyaml
-ranx
+# Part 1: preprocessing, BM25/TF-IDF, evaluation, search interface
 matplotlib==3.7.5
 nltk==3.9.1
 numpy==1.24.4
 pytest==8.3.5
 PyYAML==6.0.3
 ranx==0.3.21
-fastapi
-uvicorn
+fastapi==0.124.4
+uvicorn==0.33.0
+
+# Part 2: neural models
+# torch is installed by scripts/install.sh first (CUDA 12.6 build on GPU machines)
+torch>=2.6
+transformers>=4.41
+sentence-transformers[train]>=5.0
+datasets>=2.14
+scipy>=1.10

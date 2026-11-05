@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install everything needed to run the project:
 #   - conda (Miniforge), if no conda installation is found
-#   - the "ir-rangers" conda environment with the packages in requirements.txt
+#   - the "ir-rangers" conda environment (Python 3.11) with PyTorch and the packages in requirements.txt
 #   - NLTK stopwords
 #   - Node.js (if missing or too old) and the frontend's npm packages
 #   - a link to the dataset on the CS servers, if data/raw is missing
@@ -13,7 +13,7 @@
 set -euo pipefail
 
 ENV_NAME="ir-rangers"
-PYTHON_VERSION="3.8"
+PYTHON_VERSION="3.11"
 MIN_NODE_MAJOR=22                       # Vite 8 needs a recent Node.js
 CONDA_INSTALL_DIR="$HOME/miniforge3"    # used only if no conda is found
 FRONTEND_DIR="interface/frontend"
@@ -92,9 +92,25 @@ else
 fi
 conda_activate "$ENV_NAME"
 
+# An environment left over from Part 1 uses Python 3.8, which can't install
+# sentence-transformers v5. Stop instead of installing old package versions.
+ENV_PYTHON="$(python -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+if [ "$ENV_PYTHON" != "$PYTHON_VERSION" ]; then
+    echo "Error: '$ENV_NAME' uses Python $ENV_PYTHON, but this project needs $PYTHON_VERSION." >&2
+    echo "Remove it with 'conda env remove -n $ENV_NAME', then run this script again." >&2
+    exit 1
+fi
+
+
 echo "=== Installing Python packages ==="
 # pip skips anything already installed at a matching version.
 python -m pip install --upgrade pip
+if have nvidia-smi; then
+    # CUDA 12.6 build
+    python -m pip install torch --index-url https://download.pytorch.org/whl/cu126
+else
+    python -m pip install torch   # CPU build (or Apple MPS on Macs)
+fi
 python -m pip install -r requirements.txt
 
 echo "=== Checking NLTK stopwords ==="
