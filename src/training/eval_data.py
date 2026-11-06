@@ -22,7 +22,7 @@ from src.training.data import load_examples
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROCESSED_DIR = REPO_ROOT / "data" / "processed_neural"
-DEFAULT_VAL = PROCESSED_DIR / "training" / "val.json"
+DEFAULT_VAL = PROCESSED_DIR / "training" / "val.jsonl"
 DEFAULT_PARAGRAPHS = PROCESSED_DIR / "paragrpaphs.jsonl"
 DEFAULT_CLEANING = REPO_ROOT / "config" / "preprocessing_neural.yaml"
 

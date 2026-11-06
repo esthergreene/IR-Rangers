@@ -1,6 +1,6 @@
+import argparse
 import csv
 from pathlib import Path
-import torch
 from datasets import Dataset
 
 from sentence_transformers.sparse_encoder import SparseEncoder, SparseEncoderTrainer, SparseEncoderTrainingArguments
@@ -11,89 +11,69 @@ from transformers import EarlyStoppingCallback
 
 from src.common.paragraphs import load_paragraph_texts
 from src.training.data import load_examples
+from src.preprocessing.tokenizer import clean_for_encoder, load_cleaning_config
+# We can skip importing load_ir_eval_data if we construct the evaluator inputs directly!
 
 
-def build_dataset_and_evaluator(data_path, paragraphs_path):
+def build_triples(data_path, paragraphs_path, cleaning):
+    """One (query, positive, hard negative) row per judged positive."""
     examples = load_examples(data_path)
-    
-    # 1. Collect ONLY document IDs for the corpus text mapping
     doc_ids = set()
     for ex in examples:
-        if isinstance(ex.get("positives"), dict):
-            doc_ids.update(ex["positives"].keys())
-        if isinstance(ex.get("negatives"), list):
-            doc_ids.update(ex["negatives"])
-            
-    print(f"Loading texts for {len(doc_ids):,} document corpus IDs from {paragraphs_path}...")
-    text_mapping = load_paragraph_texts(paragraphs_path, doc_ids=doc_ids)
+        doc_ids.update(ex["positives"])
+        doc_ids.update(ex["negatives"])
+    texts = load_paragraph_texts(paragraphs_path, doc_ids=doc_ids)
 
-    # 2. Prepare Training Dataset (anchor = query text string from record)
-    anchors, positives, negatives = [], [], []
+    rows = {"anchor": [], "positive": [], "negative": []}
     for ex in examples:
-        q_text = ex.get("query")  # Query text string is right in the example record
-        
-        pos_dict = ex.get("positives", {})
-        pos_id = list(pos_dict.keys())[0] if pos_dict else None
-        pos_text = text_mapping.get(pos_id) if pos_id else None
-        
-        neg_list = ex.get("negatives", [])
-        neg_id = neg_list[0] if neg_list else None
-        neg_text = text_mapping.get(neg_id) if neg_id else None
-        
-        if q_text and pos_text and neg_text:
-            anchors.append(q_text)
-            positives.append(pos_text)
-            negatives.append(neg_text)
-
-    train_dataset = Dataset.from_dict({
-        "anchor": anchors,
-        "positive": positives,
-        "negative": negatives
-    })
-
-    # 3. Prepare Evaluator Data Structures
-    queries = {ex["query_id"]: ex["query"] for ex in examples}
-    corpus = {doc_id: text_mapping[doc_id] for doc_id in doc_ids if doc_id in text_mapping}
-    
-    relevant_docs = {}
-    for ex in examples:
-        q_id = ex["query_id"]
-        pos_ids = ex.get("positives", {}).keys() if isinstance(ex.get("positives"), dict) else []
-        for pos_id in pos_ids:
-            if pos_id in corpus:
-                if q_id not in relevant_docs:
-                    relevant_docs[q_id] = set()
-                relevant_docs[q_id].add(pos_id)
-
-    evaluator = SparseInformationRetrievalEvaluator(
-        queries=queries,
-        corpus=corpus,
-        relevant_docs=relevant_docs,
-        name="val"
-    )
-
-    return train_dataset, evaluator
+        query = clean_for_encoder(ex["query"], **cleaning)
+        for i, pos_id in enumerate(ex["positives"]):
+            neg_id = ex["negatives"][i % len(ex["negatives"])]  # cycle through the hard negatives
+            rows["anchor"].append(query)
+            rows["positive"].append(texts[pos_id])
+            rows["negative"].append(texts[neg_id])
+    return Dataset.from_dict(rows)
 
 
 def main():
-    repo_root = Path(__file__).resolve().parents[2]
-    processed_dir = repo_root / "data" / "processed_neural"
-    paragraphs_path = processed_dir / "paragraphs.jsonl"
+    parser = argparse.ArgumentParser(description="Train sparse encoder model.")
+    parser.add_argument(
+        "--run-name",
+        type=str,
+        default="run1",
+        help="Name of the run. Used to create a unique output directory under checkpoints/sparse/."
+    )
+    args_cli = parser.parse_args()
+
+    # Define paths relative to repository root
+    repo_root = Path(__file__).resolve().parents[2]  
+    output_dir = Path("checkpoints/sparse") / args_cli.run_name
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    train_data_path = repo_root / "data" / "processed_neural" / "training" / "train.jsonl"
+    val_data_path = repo_root / "data" / "processed_neural" / "training" / "val.jsonl"
+    paragraphs_path = repo_root / "data" / "processed_neural" / "paragraphs.jsonl"
+
+    cleaning = load_cleaning_config(repo_root / "config" / "preprocessing_neural.yaml")
+    train_dataset = build_triples(train_data_path, paragraphs_path, cleaning)   # ~5,138 rows
+    val_dataset = build_triples(val_data_path, paragraphs_path, cleaning)       # ~582 rows
+
+    # Construct validation IR evaluation components directly without hitting eval_data.py's bug
+    val_examples = load_examples(val_data_path)
+    queries = {str(ex["query_id"]): clean_for_encoder(ex["query"], **cleaning) for ex in val_examples}
+    relevant_docs = {str(ex["query_id"]): set(ex["positives"]) for ex in val_examples}
+
+    # Collect paragraph IDs needed for the validation corpus (positives + hard negatives + sample distractors if desired)
+    val_doc_ids = set()
+    for ex in val_examples:
+        val_doc_ids.update(ex["positives"])
+        val_doc_ids.update(ex["negatives"])
     
-    train_data_path = processed_dir / "training" / "train.jsonl"
-    val_data_path = processed_dir / "training" / "val.jsonl"
-    
-    output_dir = repo_root / "checkpoints" / "sparse" / "run1"
+    corpus = load_paragraph_texts(paragraphs_path, doc_ids=val_doc_ids)
 
-    print("Preparing training dataset and evaluator...")
-    train_dataset, _ = build_dataset_and_evaluator(train_data_path, paragraphs_path)
-    val_dataset, val_evaluator = build_dataset_and_evaluator(val_data_path, paragraphs_path)
-
-    model = SparseEncoder("naver/splade-cocondenser-selfdistil")
-    model.max_seq_length = 256  # match the index here
-
-    # Set up loss function: MultipleNegativesRankingLoss
-    loss = SparseMultipleNegativesRankingLoss(model=model)
+    val_evaluator = SparseInformationRetrievalEvaluator(
+        queries=queries, corpus=corpus, relevant_docs=relevant_docs, name="val"
+    )
 
     # Training Arguments with Early Stopping and evaluation settings
     args = SparseEncoderTrainingArguments(
@@ -107,21 +87,35 @@ def main():
         metric_for_best_model="eval_val_dot_ndcg@10",
         greater_is_better=True,
         logging_steps=10,
-        per_device_train_batch_size=8,
+        per_device_train_batch_size=32,
+        fp16=True,
         learning_rate=1e-5,
         num_train_epochs=3,
         batch_sampler=BatchSamplers.NO_DUPLICATES,
     )
 
-    trainer = SparseEncoderTrainer(
-    model=model,
-    args=args,
-    train_dataset=train_dataset,
-    eval_dataset=val_dataset, 
-    evaluator=val_evaluator,
-    callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
+    model = SparseEncoder(model_name_or_path="naver/splade-cocondenser-ensembledistil")
+    
+    base_loss = SparseMultipleNegativesRankingLoss(model=model)
+    
+    # Pass model as the first argument, followed by the base loss and regularizer weight
+    loss = SpladeLoss(
+        model,
+        loss=base_loss,
+        document_regularizer_weight=0.001
     )
 
+    trainer = SparseEncoderTrainer(
+        model=model,
+        args=args,
+        train_dataset=train_dataset,
+        eval_dataset=val_dataset,
+        loss=loss,
+        evaluator=val_evaluator,
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
+    )
+
+    print(f"Output directory for this run: {output_dir}")
     print("Running zero-shot evaluation baseline...")
     zero_shot_metrics = trainer.evaluate()
     print(f"Zero-shot baseline metrics: {zero_shot_metrics}")
@@ -138,13 +132,14 @@ def main():
     log_history_path = output_dir / "training_log_history.csv"
     print(f"Saving training log history to {log_history_path}")
     
-    if trainer.state.log_history:
-        keys = set().union(*(d.keys() for d in trainer.state.log_history))
-        with open(log_history_path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=sorted(keys))
-            writer.writeheader()
-            for entry in trainer.state.log_history:
-                writer.writerow(entry)
+    with open(log_history_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["step", "epoch", "split", "loss"])
+        for entry in trainer.state.log_history:
+            if "loss" in entry:
+                writer.writerow([entry["step"], entry["epoch"], "train", entry["loss"]])
+            elif "eval_loss" in entry:
+                writer.writerow([entry["step"], entry["epoch"], "val", entry["eval_loss"]])
 
 
 if __name__ == "__main__":
