@@ -3,16 +3,14 @@ from pathlib import Path
 import torch
 from datasets import Dataset
 
-from sentence_transformers.trainer import SentenceTransformerTrainer as SparseEncoderTrainer
-from sentence_transformers.training_args import SentenceTransformerTrainingArguments as SparseEncoderTrainingArguments
-from sentence_transformers.losses import MultipleNegativesRankingLoss as SparseMultipleNegativesRankingLoss
-from sentence_transformers.evaluation import InformationRetrievalEvaluator as SparseInformationRetrievalEvaluator
+from sentence_transformers.sparse_encoder import SparseEncoder, SparseEncoderTrainer, SparseEncoderTrainingArguments
+from sentence_transformers.sparse_encoder.losses import SpladeLoss, SparseMultipleNegativesRankingLoss
+from sentence_transformers.sparse_encoder.evaluation import SparseInformationRetrievalEvaluator
 from sentence_transformers.training_args import BatchSamplers
 from transformers import EarlyStoppingCallback
 
 from src.common.paragraphs import load_paragraph_texts
 from src.training.data import load_examples
-from src.index.sparse_indexer import SpladeEncoder
 
 
 def build_dataset_and_evaluator(data_path, paragraphs_path):
@@ -89,43 +87,10 @@ def main():
 
     print("Preparing training dataset and evaluator...")
     train_dataset, _ = build_dataset_and_evaluator(train_data_path, paragraphs_path)
-    _, val_evaluator = build_dataset_and_evaluator(val_data_path, paragraphs_path)
+    val_dataset, val_evaluator = build_dataset_and_evaluator(val_data_path, paragraphs_path)
 
-    # Initialize model using your project's local SpladeEncoder wrapper
-    model_name = "naver/splade-cocondenser-selfdistil"
-    print(f"Loading local SpladeEncoder model: {model_name}")
-    
-    model = SpladeEncoder(model_name)
-    
-    # 1. Attach a tokenize method expected by SentenceTransformerTrainer
-    if not hasattr(model, "tokenize"):
-        def _tokenize(texts, **kwargs):
-            return model.tokenizer(
-                texts,
-                padding=True,
-                truncation=True,
-                max_length=512,
-                return_tensors="pt",
-                **kwargs
-            )
-        model.tokenize = _tokenize
-
-    # 2. Attach a .to() method expected by Hugging Face Trainer
-    if not hasattr(model, "to"):
-        def _to(device):
-            if hasattr(model, "model") and hasattr(model.model, "to"):
-                model.model.to(device)
-            return model
-        model.to = _to
-
-    # 3. Attach a forward() method expected by Hugging Face Trainer
-    if not hasattr(model, "forward") and hasattr(model, "model"):
-        def _forward(*args, **kwargs):
-            return model.model(*args, **kwargs)
-        model.forward = _forward
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model.to(device)
+    model = SparseEncoder("naver/splade-cocondenser-selfdistil")
+    model.max_seq_length = 256  # match the index here
 
     # Set up loss function: MultipleNegativesRankingLoss
     loss = SparseMultipleNegativesRankingLoss(model=model)
@@ -149,12 +114,12 @@ def main():
     )
 
     trainer = SparseEncoderTrainer(
-        model=model,
-        args=args,
-        train_dataset=train_dataset,
-        eval_dataset=val_evaluator,
-        loss=loss,
-        callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
+    model=model,
+    args=args,
+    train_dataset=train_dataset,
+    eval_dataset=val_dataset, 
+    evaluator=val_evaluator,
+    callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
     )
 
     print("Running zero-shot evaluation baseline...")
