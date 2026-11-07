@@ -12,7 +12,7 @@ from transformers import EarlyStoppingCallback
 from src.common.paragraphs import load_paragraph_texts
 from src.training.data import load_examples
 from src.preprocessing.tokenizer import clean_for_encoder, load_cleaning_config
-# We can skip importing load_ir_eval_data if we construct the evaluator inputs directly!
+from src.training.eval_data import load_ir_eval_data 
 
 
 def build_triples(data_path, paragraphs_path, cleaning):
@@ -56,23 +56,17 @@ def main():
 
     cleaning = load_cleaning_config(repo_root / "config" / "preprocessing_neural.yaml")
     train_dataset = build_triples(train_data_path, paragraphs_path, cleaning)   # ~5,138 rows
-    val_dataset = build_triples(val_data_path, paragraphs_path, cleaning)       # ~582 rows
 
-    # Construct validation IR evaluation components directly without hitting eval_data.py's bug
-    val_examples = load_examples(val_data_path)
-    queries = {str(ex["query_id"]): clean_for_encoder(ex["query"], **cleaning) for ex in val_examples}
-    relevant_docs = {str(ex["query_id"]): set(ex["positives"]) for ex in val_examples}
+    # Updated: Load validation data using teammate's fixed eval_data module with 20k distractors
+    queries, corpus, relevant_docs = load_ir_eval_data()
 
-    # Collect paragraph IDs needed for the validation corpus (positives + hard negatives + sample distractors if desired)
-    val_doc_ids = set()
-    for ex in val_examples:
-        val_doc_ids.update(ex["positives"])
-        val_doc_ids.update(ex["negatives"])
-    
-    corpus = load_paragraph_texts(paragraphs_path, doc_ids=val_doc_ids)
-
+    # Updated: Added show_progress_bar=True so evaluation output is visible
     val_evaluator = SparseInformationRetrievalEvaluator(
-        queries=queries, corpus=corpus, relevant_docs=relevant_docs, name="val"
+        queries=queries, 
+        corpus=corpus, 
+        relevant_docs=relevant_docs, 
+        name="val",
+        show_progress_bar=True
     )
 
     # Training Arguments with Early Stopping and evaluation settings
@@ -109,7 +103,7 @@ def main():
         model=model,
         args=args,
         train_dataset=train_dataset,
-        eval_dataset=val_dataset,
+        eval_dataset=None,  # We are passing val_evaluator directly, no need for val_dataset here
         loss=loss,
         evaluator=val_evaluator,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
