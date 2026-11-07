@@ -216,7 +216,11 @@ def build_index(paragraphs_path, model_name=DEFAULT_MODEL, batch_size=64, limit=
           f"({len(doc_ids) / elapsed:.0f}/s)")
 
     # Stored by column, so a search reads only the query terms' columns.
-    matrix = vstack(chunks, format="csr").tocsc()
+    with this:
+    matrix = vstack(chunks, format="csr")
+    chunks.clear()        
+    matrix = matrix.tocsc()
+
     settings = {"model": model_name, "max_length": encoder.max_length, "with_title": with_title}
     return SparseIndexer(matrix, doc_ids, settings)
 
