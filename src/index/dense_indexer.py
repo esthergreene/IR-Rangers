@@ -10,6 +10,7 @@ from pathlib import Path
 import faiss
 import numpy as np
 from src.model.dense import DenseModel
+from src.common.paragraphs import iter_paragraph_batches
 
 def load_documents(file_path):
     """
@@ -114,7 +115,12 @@ def build_dense_index(file_path, collection, output_dir, model_path="sentence-tr
 
         print(f"Loaded checkpoint with {len(doc_ids)} documents")
 
-    for batch_number, (batch_ids, batch_texts) in enumerate(document_batches(file_path, collection, batch_size)):
+    if collection == "paragraph":
+        batches = iter_paragraph_batches(file_path, batch_size=batch_size, with_title=False)
+    else:
+        batches = document_batches(file_path, collection, batch_size)
+
+    for batch_number, (batch_ids, batch_texts) in enumerate(batches):
         if batch_number * batch_size < len(doc_ids):
             continue
 

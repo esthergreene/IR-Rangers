@@ -53,3 +53,8 @@ paper/notes.md
 data/dense_indexes/
 models/finetuned_dense_checkpoints/
 models/finetuned_dense/
+data/processed_neural/
+data/processed_neural_sample/
+
+# Saved machine learning models
+models/

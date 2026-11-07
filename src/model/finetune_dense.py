@@ -13,6 +13,11 @@ from sentence_transformers import(SentenceTransformer, SentenceTransformerTraine
 from sentence_transformers.sentence_transformer import losses
 from sentence_transformers.sentence_transformer.training_args import BatchSamplers
 from sentence_transformers.evaluation import InformationRetrievalEvaluator
+from src.training.data import load_examples
+from src.training.eval_data import load_ir_eval_data
+from src.common.paragraphs import load_paragraph_texts
+from src.preprocessing.tokenizer import clean_for_encoder, load_cleaning_config
+from transformers import EarlyStoppingCallback
 
 def load_training_queries(file_path):
     """
@@ -168,6 +173,14 @@ def prepare_training_dataset(queries, paper_qrels, paragraph_qrels, paper_docume
 
     return create_training_dataset(all_pairs)
 
+def prepare_paragraph_training_dataset(queries, paragraph_qrels, paragraph_documents):
+    """
+    Prepare training examples using only relevant paragraphs.
+    """
+    paragraph_pairs = create_training_pairs(queries, paragraph_qrels, paragraph_documents)
+
+    return create_training_dataset(paragraph_pairs)
+
 def load_and_split_training_data():
     """
     Load our training queries and relevance judgments,
@@ -198,7 +211,7 @@ def load_training_documents(data):
     paper_ids = {doc_id for _, doc_id, _ in data["train_paper_qrels"]}
     paragraph_ids = {doc_id for _, doc_id, _ in data["train_paragraph_qrels"]}
     paper_documents = load_document_texts("data/processed/papers.jsonl", paper_ids, "paper")
-    paragraph_documents = load_document_texts("data/processed/paragraphs.jsonl", paragraph_ids, "paragraph")
+    paragraph_documents = load_document_texts("data/processed_neural/paragraphs.jsonl", paragraph_ids, "paragraph")
 
     return paper_documents, paragraph_documents
 
@@ -216,6 +229,9 @@ def create_training_arguments():
         logging_steps=25,
         save_strategy="epoch",
         eval_strategy="epoch",
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_validation_cosine_ndcg@10",
+        greater_is_better=True,
         seed=42,
         report_to="none"
     )
@@ -239,7 +255,16 @@ def create_training_trainer(model, dataset, evaluator=None):
     arguments = create_training_arguments()
     loss = create_training_loss(model)
 
-    return SentenceTransformerTrainer(model=model, args=arguments, train_dataset=dataset, loss=loss, evaluator=evaluator)
+    return SentenceTransformerTrainer(
+        model=model,
+        args=arguments,
+        train_dataset=dataset,
+        loss=loss,
+        evaluator=evaluator,
+        callbacks=[
+            EarlyStoppingCallback(early_stopping_patience=3)
+        ]
+    )
 
 def prepare_validation_dataset(data, paper_documents, paragraph_documents):
     """
@@ -260,7 +285,7 @@ def load_validation_documents(data):
     paper_ids = {doc_id for _, doc_id, _ in data["validation_paper_qrels"]}
     paragraph_ids = {doc_id for _, doc_id, _ in data["validation_paragraph_qrels"]}
     paper_documents = load_document_texts("data/processed/papers.jsonl", paper_ids, "paper")
-    paragraph_documents = load_document_texts("data/processed/paragraphs.jsonl", paragraph_ids, "paragraph")
+    paragraph_documents = load_document_texts("data/processed_neural/paragraphs.jsonl", paragraph_ids, "paragraph")
 
     return paper_documents, paragraph_documents
 
@@ -284,6 +309,37 @@ def get_validation_corpus(paper_documents, paragraph_documents):
 
     return corpus
 
+def get_paragraph_validation_corpus(paragraph_documents):
+    """
+    Build a validation corpus containing only paragraphs.
+    """
+    return dict(paragraph_documents)
+
+def load_background_paragraphs(file_path):
+    """
+    Load background paragraphs for validation.
+    """
+    paragraphs = {}
+
+    with open(file_path, "r", encoding="utf-8") as file:
+        for line in file:
+            if not line.strip():
+                continue
+
+            document = json.loads(line)
+            paragraphs[document["doc_id"]] = document["text"]
+
+    return paragraphs
+
+def build_paragraph_validation_corpus(validation_paragraphs, background_paragraphs):
+    """
+    Combine validation paragraphs with background paragraphs.
+    """
+    corpus = dict(background_paragraphs)
+    corpus.update(validation_paragraphs)
+
+    return corpus
+
 def get_validation_relevant_docs(data, corpus):
     """
     Match validation queries with their relevant documents.
@@ -304,6 +360,18 @@ def get_validation_relevant_docs(data, corpus):
 
     return relevant_docs
 
+def get_paragraph_validation_relevant_docs(data, corpus):
+    """
+    Match validation queries with their relevant paragraphs.
+    """
+    relevant_docs = {query_id: set() for query_id in data["validation_ids"]}
+
+    for query_id, doc_id, relevance in data["validation_paragraph_qrels"]:
+        if relevance > 0 and doc_id in corpus:
+            relevant_docs[query_id].add(doc_id)
+
+    return relevant_docs
+
 def create_validation_evaluator(queries, corpus, relevant_docs):
     """
     Set up retrieval evaluation using our held-out queries.
@@ -318,3 +386,48 @@ def create_validation_evaluator(queries, corpus, relevant_docs):
         mrr_at_k=[10],
         ndcg_at_k=[5,10]
     )
+
+def load_shared_training_dataset():
+    """
+    Prepare Sentence-BERT training pairs using our
+    shared training split and cleaned paragraph collection.
+    """
+    examples = load_examples("data/processed_neural/training/train.jsonl")
+    cleaning = load_cleaning_config("config/preprocessing_neural.yaml")
+    positive_ids = {doc_id for example in examples for doc_id in example["positives"]}
+    paragraphs = load_paragraph_texts("data/processed_neural/paragraphs.jsonl", doc_ids=positive_ids, with_title=False)
+    pairs = []
+
+    for example in examples:
+        query = clean_for_encoder(example["query"], **cleaning)
+
+        for doc_id in example["positives"]:
+            [pairs.append((query, paragraphs[doc_id]))]
+
+    dataset = create_training_dataset(pairs)
+
+    print(f"Loaded {len(examples)} training queries.")
+    print(f"Created {len(dataset)} Sentence-BERT training pairs.")
+
+    return dataset
+
+def create_shared_validation_evaluator():
+    """
+    Create the Sentence-BERT evaluator using our
+    shared validation queries and paragraph corpus.
+    """
+    queries, corpus, relevant_docs = load_ir_eval_data()
+    evaluator = InformationRetrievalEvaluator(
+        queries=queries,
+        corpus=corpus,
+        relevant_docs=relevant_docs,
+        name="validation",
+        ndcg_at_k=[10],
+        mrr_at_k=[10],
+        precision_recall_at_k=[10],
+        accuracy_at_k=[10],
+        write_csv=True
+    )
+    evaluator.primary_metric = "cosine_ndcg@10"
+
+    return evaluator
