@@ -161,11 +161,11 @@ def build_neural_search(args):
     def search(query_text):
         paragraphs = searcher.search(clean_for_encoder(query_text, **cleaning), k=args.paragraph_depth)
         return maxp(paragraphs, paper_of, k=args.k)
-    return
+    return search
 
 def main():
     args = parse_args()
-    run_name = args.run_name or args.__module__
+    run_name = args.run_name or args.model
 
     queries = load_queries(RAW_DIR / QUERY_FILES[args.queries])
     if args.limit_queries:
@@ -186,8 +186,8 @@ def main():
         results[query.query_id] = search(query.text)
         search_seconds += time.perf_counter() - start
     
-    path = args.output / run_filename(args.collection, args.model, args.queries)
-    num_lines = write_run(path, results, run_id=args.model)
+    path = args.output / run_filename(args.collection, run_name, args.queries)
+    num_lines = write_run(path, results, run_id=run_name)
 
     print(f"Wrote {num_lines:,} lines for {len(queries):,} queries to {path}")
     print(f"Average search time: {1000 * search_seconds / len(queries):.1f} ms per query")

@@ -31,7 +31,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 RAW_DIR = REPO_ROOT / "data" / "raw"
 RUNS_DIR = REPO_ROOT / "runs"
 
-COLLECTIONS = ["paper", "paragraphs"]
+COLLECTIONS = ["paper", "paragraph"]
 DEFAULT_MODELS = ["bm25", "dense", "sparse"] # BM25 first, so it gets letter "a" in the tables
 GRADED_METRICS = ["ndcg", "ndcg@5", "mrr", "precision@5", "precision@10", "recall@100"]
 STRICT_METRICS = ["mrr", "precision@5"]
