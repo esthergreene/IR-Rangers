@@ -120,9 +120,21 @@ def build_dense_index(file_path, collection, output_dir, model_path="sentence-tr
     else:
         batches = document_batches(file_path, collection, batch_size)
 
-    for batch_number, (batch_ids, batch_texts) in enumerate(batches):
-        if batch_number * batch_size < len(doc_ids):
+    processed_count = 0
+
+    for batch_ids, batch_texts in batches:
+        batch_end = processed_count + len(batch_ids)
+
+        if batch_end <= len(doc_ids):
+            processed_count = batch_end
             continue
+
+        if processed_count < len(doc_ids):
+            skip_count = len(doc_ids) - processed_count
+            batch_ids = batch_ids[skip_count:]
+            batch_texts = batch_texts[skip_count:]
+
+        processed_count = batch_end
 
         embeddings = model.encode_documents(batch_texts, batch_size=batch_size)
         index.add(embeddings)
@@ -131,7 +143,7 @@ def build_dense_index(file_path, collection, output_dir, model_path="sentence-tr
         if len(doc_ids) % 10000 < batch_size:
             print(f"Indexed {len(doc_ids)} documents")
 
-        if len(doc_ids) % checkpoint_interval < batch_size:
+        if len(doc_ids) // checkpoint_interval > (len(doc_ids) - len(batch_ids)) // checkpoint_interval:
             temporary_index_path = checkpoint_path.with_suffix(".tmp")
             faiss.write_index(index, str(temporary_index_path))
             temporary_ids_path = checkpoint_ids_path.with_suffix(".tmp")
