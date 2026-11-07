@@ -23,7 +23,7 @@ from src.training.data import load_examples
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROCESSED_DIR = REPO_ROOT / "data" / "processed_neural"
 DEFAULT_VAL = PROCESSED_DIR / "training" / "val.jsonl"
-DEFAULT_PARAGRAPHS = PROCESSED_DIR / "paragrpaphs.jsonl"
+DEFAULT_PARAGRAPHS = PROCESSED_DIR / "paragraphs.jsonl"
 DEFAULT_CLEANING = REPO_ROOT / "config" / "preprocessing_neural.yaml"
 
 def load_all_doc_ids(paragraphs_path):
@@ -39,8 +39,7 @@ def load_ir_eval_data(val_path=DEFAULT_VAL, paragraphs_path=DEFAULT_PARAGRAPHS,
     # Clean queries the same way search() does at retrieval time.
     queries = {str(ex["query_id"]): clean_for_encoder(ex["query"], **cleaning) 
                for ex in examples}
-    relevant_docs = {str(ex["query_id"]): clean_for_encoder(ex["positives"]) 
-                     for ex in examples}
+    relevant_docs = {str(ex["query_id"]): set(ex["positives"]) for ex in examples}
 
     judged = set()
     for ex in examples:
