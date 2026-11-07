@@ -221,7 +221,7 @@ def create_training_arguments():
     """
     return SentenceTransformerTrainingArguments(
         output_dir="models/finetuned_dense_checkpoints",
-        num_train_epochs=2,
+        num_train_epochs=5,
         per_device_train_batch_size=16,
         learning_rate=2e-5,
         warmup_steps=0.1,
