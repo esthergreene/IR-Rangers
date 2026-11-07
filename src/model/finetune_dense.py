@@ -431,3 +431,23 @@ def create_shared_validation_evaluator():
     evaluator.primary_metric = "cosine_ndcg@10"
 
     return evaluator
+
+def main():
+    """
+    Fine-tune Sentence-BERT using our shared training and validation datasets.
+    """
+    dataset = load_shared_training_dataset()
+    evaluator = create_shared_validation_evaluator()
+    model = load_training_model()
+    trainer = create_training_trainer(model, dataset, evaluator)
+
+    print("Starting Sentence-BERT fine-tuning...")
+
+    trainer.train()
+    model.save("models/finetuned_dense")
+
+    print("Fine-tuning complete!")
+    print("Saved model to models/finetuned_dense")
+
+if __name__ == "__main__":
+    main()
