@@ -165,3 +165,13 @@ def build_dense_index(file_path, collection, output_dir, model_path="sentence-tr
 
     print(f"Saved FAISS index to {index_path}")
     print(f"Saved {len(doc_ids)} documents IDS to {ids_path}")
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Build a FAISS index over the paragraph collection.")
+    parser.add_argument("--paragraphs", default="data/processed_neural/paragraphs.jsonl")
+    parser.add_argument("--output-dir", required=True, help="One folder per model, e.g., data/processed_neural/dense_run1")
+    parser.add_argument("--model", default="sentence-transformers/all-MiniLM-L6-v2")
+    parser.add_argument("--batch-size", type=int, default=256)
+    args = parser.parse_args()
+    build_dense_index(args.paragraphs, "paragraph", args.output_dir, args.model, args.batch_size)

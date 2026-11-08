@@ -1,23 +1,94 @@
 """
-This file prepares our training data and fine-tunes Sentence-BERT.
+Fine-tune Sentence-BERT (dense retrieval) on the Train queries.
 
 We use the training queries and relevance judgments to teach the model
-which papers and paragraphs are relevant to each query.
-"""
+which papers are relevant to each query.
 
+Trains on (query, positive, BM25 hard negative) triples from 
+data/processed_neural/training/:
+
+    train.jsonl     training triples, one row per judged positive
+    val.jsonl       validation triples (validation loss, for the loss plot), and 
+                    the shared validation IR data from src/training/eval_data.py 
+                    (val nDCG@10, for checkpointing and early stopping)
+
+Writes to checkpoints/dense/<run-name>/:
+    best_model/                 the checkpoint with the best val nDCG@10
+    training_log_history.csv    step, epoch, split, loss (train and val)
+    summary.json                zero-shot and best val metrics, settings
+
+Usage, from the repository root:
+    python -m src.training.train_dense --run-name run1
+"""
+import argparse
+import csv
 import json
+import math
 from pathlib import Path
 import random
+
 from datasets import Dataset
-from sentence_transformers import(SentenceTransformer, SentenceTransformerTrainer, SentenceTransformerTrainingArguments)
+from sentence_transformers import SentenceTransformer, SentenceTransformerTrainer, SentenceTransformerTrainingArguments
 from sentence_transformers.sentence_transformer import losses
 from sentence_transformers.sentence_transformer.training_args import BatchSamplers
 from sentence_transformers.evaluation import InformationRetrievalEvaluator
+from transformers import EarlyStoppingCallback
+
 from src.training.data import load_examples
 from src.training.eval_data import load_ir_eval_data
 from src.common.paragraphs import load_paragraph_texts
 from src.preprocessing.tokenizer import clean_for_encoder, load_cleaning_config
-from transformers import EarlyStoppingCallback
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PROCESSED_DIR = REPO_ROOT / "data" / "processed_neural"
+TRAINING_DIR = PROCESSED_DIR / "training"
+CHECKPOINT_DIR = REPO_ROOT / "checkpoints" / "dense"
+CLEANING_CONFIG = REPO_ROOT / "config" / "preprocessing_neural.yaml"
+
+DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+BEST_METRIC = "eval_val_cosine_ndcg@10"
+
+def build_triples(data_path, paragraphs_path, cleaning):
+    """One (query, positive, hard negative) row per judged positive."""
+    examples = load_examples(data_path)
+    doc_ids = set()
+    for ex in examples:
+        doc_ids.update(ex["positives"])
+        doc_ids.update(ex["negatives"])
+    texts = load_paragraph_texts(paragraphs_path, doc_ids=doc_ids)
+
+    rows = {"anchor": [], "positive": [], "negative": []}
+    for ex in examples:
+        query = clean_for_encoder(ex["query"], **cleaning)
+        for i, pos_id in enumerate(ex["positives"]):
+            neg_id = ex["negatives"][i % len(ex["negatives"])] # cycle through the hard negatives
+            rows["anchor"].append(query)
+            rows["positive"].append(texts[pos_id])
+            rows["negative"].append(texts[neg_id])
+    print(f"Built {len(rows['anchor']):,} triples from {len(examples):,} queries in {data_path.name}")
+    return Dataset.from_dict(rows)
+
+def write_loss_csv(log_history, path):
+    """Write train and validation loss as step, epoch, split, loss."""
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["step", "epoch", "split", "loss"])
+        for entry in log_history:
+            if "loss" in entry:
+                writer.writerow([entry["step"], entry.get("epoch", 0), "train", entry["loss"]])
+            elif "eval_loss" in entry:
+                writer.writerow([entry["step"], entry.get("epoch", 0), "val", entry["eval_loss"]])
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Fine-tune Sentence-BERT on the Train queries.")
+    parser.add_argument("--run-name", default="run1", help="Output folder under checkpoints/dense/ (default: run1)")
+    parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Base model (default: {DEFAULT_MODEL})")
+    parser.add_argument("--batch-size", type=int, default=32, help="Triples per batch, more means more in-batch negatives (default: 32)")
+    parser.add_argument("--epochs", type=int, default=5, help="Maximum epochs; early stopping may end sooner (default: 5)")
+    parser.add_argument("--learning-rate", type=float, defualt=2e-5, help="Learning rate (default: 2e-5)")
+    parser.add_argument("--eval-steps", type=int, default=50, help="Evaluate and checkpoint every N steps (defualt: 50)")
+    parser.add_argument("--patience", type=int, default=3, help="Evaluations without improvement before stopping (default: 3)")
+    return parser.parse_args()
 
 def load_training_queries(file_path):
     """
@@ -215,54 +286,58 @@ def load_training_documents(data):
 
     return paper_documents, paragraph_documents
 
-def create_training_arguments():
+def create_training_arguments(args, output_dir, num_train_examples):
     """
     Set up the training settings for Sentence-BERT.
     """
+    total_steps = math.ceil(num_train_examples / args.batch_size) * args.epochs
     return SentenceTransformerTrainingArguments(
-        output_dir="models/finetuned_dense_checkpoints",
-        num_train_epochs=5,
-        per_device_train_batch_size=16,
-        learning_rate=2e-5,
-        warmup_steps=0.1,
-        batch_sampler=BatchSamplers.NO_DUPLICATES,
-        logging_steps=25,
-        save_strategy="epoch",
-        eval_strategy="epoch",
+        output_dir=str(output_dir),
+        num_train_epochs=args.epochs,
+        per_device_train_batch_size=args.batch_size,
+        learning_rate=args.learning_rate,
+        warmup_steps=(0.1 * total_steps),
+        fp16=True,
+        batch_sampler=BatchSamplers.NO_DUPLICATES, # no query twice in a batch, so its other postives aren't used as negatives
+        eval_strategy="steps",
+        eval_steps=args.eval_steps,
+        save_strategy="steps",
+        save_steps=args.eval_steps,   # must be a multiple of eval_steps for load_best_model_at_end
+        save_total_limit=2,
         load_best_model_at_end=True,
-        metric_for_best_model="eval_validation_cosine_ndcg@10",
+        metric_for_best_model=BEST_METRIC,
         greater_is_better=True,
+        logging_steps=10,
         seed=42,
         report_to="none"
     )
 
-def load_training_model():
+def load_training_model(model_name):
     """
     Load the pretrained Sentence-BERT model for fine-tuning.
     """
-    return SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    return SentenceTransformer(model_name)
 
 def create_training_loss(model):
     """
-    Set up the loss function for fine-tuning Sentence-BERT.
+    MultipleNegativesRankingLoss: each query's positive against its hard 
+    negative and every other paragraph in the batch.
     """
     return losses.MultipleNegativesRankingLoss(model)
 
-def create_training_trainer(model, dataset, evaluator=None):
+def create_training_trainer(model, training_args, train_dataset, val_dataset, evaluator, patience):
     """
-    Set up the Sentence-BERT trainer using our training dataset.
+    Set up the Sentence-BERT trainer with validation loss, nDCG@10 and early stopping.
     """
-    arguments = create_training_arguments()
-    loss = create_training_loss(model)
-
     return SentenceTransformerTrainer(
         model=model,
-        args=arguments,
-        train_dataset=dataset,
-        loss=loss,
-        evaluator=evaluator,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=val_dataset,   # validation loss (required for loss plot)
+        loss=create_training_loss(model),
+        evaluator=evaluator,        # val nDCG@10 (checkpointinng and early stopping)
         callbacks=[
-            EarlyStoppingCallback(early_stopping_patience=3)
+            EarlyStoppingCallback(early_stopping_patience=patience)
         ]
     )
 
@@ -415,39 +490,78 @@ def create_shared_validation_evaluator():
     """
     Create the Sentence-BERT evaluator using our
     shared validation queries and paragraph corpus.
+
+    (val nDCG@10, for checkpointing and early stopping)
     """
     queries, corpus, relevant_docs = load_ir_eval_data()
-    evaluator = InformationRetrievalEvaluator(
+    return InformationRetrievalEvaluator(
         queries=queries,
         corpus=corpus,
         relevant_docs=relevant_docs,
         name="validation",
-        ndcg_at_k=[10],
-        mrr_at_k=[10],
-        precision_recall_at_k=[10],
-        accuracy_at_k=[10],
-        write_csv=True
+        batch_size=128,
+        show_progress_bar=True,
     )
-    evaluator.primary_metric = "cosine_ndcg@10"
-
-    return evaluator
 
 def main():
     """
     Fine-tune Sentence-BERT using our shared training and validation datasets.
     """
-    dataset = load_shared_training_dataset()
+    args = parse_args()
+    output_dir = CHECKPOINT_DIR / args.run_name
+    if (output_dir / "best_model").exists():
+        raise SystemExit(f"{output_dir} already has a best model; pick another --run-name.")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Output directory: {output_dir}")
+
+    # Data: triples for the losses, shared val IR data for nDCG@10
+    paragraphs_path = PROCESSED_DIR / "paragraphs.jsonl"
+    cleaning = load_cleaning_config(CLEANING_CONFIG)
+    train_dataset = build_triples(TRAINING_DIR / "train.jsonl", paragraphs_path, cleaning)
+    val_dataset = build_triples(TRAINING_DIR / "val.jsonl", paragraphs_path, cleaning)
     evaluator = create_shared_validation_evaluator()
-    model = load_training_model()
-    trainer = create_training_trainer(model, dataset, evaluator)
+
+    model = load_training_model(args.model)
+    training_args = create_training_arguments(args, output_dir, len(train_dataset))
+    trainer = create_training_trainer(model, training_args, train_dataset, val_dataset, 
+                                      evaluator, args.patience)
+
+    print("Evaluating the base model before fine-tuning...")
+    zero_shot = trainer.evaluate()
+    print(f"Zero-shot {BEST_METRIC}: {zero_shot[BEST_METRIC]:.4f}, val loss: {zero_shot['eval_loss']:.4f}")
 
     print("Starting Sentence-BERT fine-tuning...")
-
     trainer.train()
-    model.save("models/finetuned_dense")
 
-    print("Fine-tuning complete!")
-    print("Saved model to models/finetuned_dense")
+    # load_best_model_at_end restored the best checkpoint into trainer.model.
+    best_model_path = output_dir / "best_model"
+    trainer.model.save(str(best_model_path))
+
+    log_path = output_dir / "training_log_history.csv"
+    write_loss_csv(trainer.state.log_history, log_path)
+    print(f"Loss history saved to {log_path}")
+
+    final = trainer.evaluate()
+    summary = {
+        "base_model": args.model,
+        "settings": {
+            "batch_size": args.batch_size,
+            "epochs": args.epochs,
+            "learning_rate": args.learning_rate,
+            "warmup_steps": training_args.warmup_steps,
+            "max_seq_length": model.max_seq_length,
+        },
+        "train_triples": len(train_dataset),
+        "val_triples": len(val_dataset),
+        "best_checkpoint": trainer.state.best_model_checkpoint,
+        "zero_shot": {key: value for key, value in zero_shot.items() if key.startswith("eval_")},
+        "best": {key: value for key, value in final.items() if key.startswith("eval_")},
+    }
+    with open(output_dir / "summary.json", "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+    print(f"Zero-shot -> best {BEST_METRIC}: {zero_shot[BEST_METRIC]:.4f} -> {final[BEST_METRIC]:.4f}")
+    print(f"Summary saved to {output_dir / 'summary.json'}")
+
 
 if __name__ == "__main__":
     main()
