@@ -1,0 +1,32 @@
+
+--- PAPER COLLECTION (study) ---
+
+================ Paper, graded ================
+#    Model            NDCG    NDCG@5    MRR     P@5     P@10      Recall@100
+---  ---------------  ------  --------  ------  ------  ------  ------------
+a    BM25             0.582   0.514     0.544   0.137   0.080          0.803
+b    sparse_zeroshot  0.668ᵃ  0.625ᵃ    0.654ᵃ  0.161ᵃ  0.090ᵃ         0.815
+(LaTeX table saved to results/latex/study_paper_graded.tex)
+
+================ Paper, strict (grade 2 only) ================
+#    Model            MRR     P@5
+---  ---------------  ------  ------
+a    BM25             0.535   0.124
+b    sparse_zeroshot  0.651ᵃ  0.147ᵃ
+(LaTeX table saved to results/latex/study_paper_strict.tex)
+
+--- PARAGRAPH COLLECTION (study) ---
+
+================ Paragraph, graded ================
+#    Model              NDCG    NDCG@5    MRR    P@5    P@10    Recall@100
+---  ---------------  ------  --------  -----  -----  ------  ------------
+a    BM25              0.474     0.416  0.516  0.174   0.107         0.592
+b    sparse_zeroshot   0.485     0.431  0.524  0.186   0.11          0.603
+(LaTeX table saved to results/latex/study_paragraph_graded.tex)
+
+================ Paragraph, strict (grade 2 only) ================
+#    Model              MRR    P@5
+---  ---------------  -----  -----
+a    BM25             0.45   0.115
+b    sparse_zeroshot  0.463  0.124
+(LaTeX table saved to results/latex/study_paragraph_strict.tex)
