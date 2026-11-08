@@ -35,7 +35,7 @@ COLLECTIONS = ["paper", "paragraph"]
 DEFAULT_MODELS = ["bm25", "dense", "sparse"] # BM25 first, so it gets letter "a" in the tables
 GRADED_METRICS = ["ndcg", "ndcg@5", "mrr", "precision@5", "precision@10", "recall@100"]
 STRICT_METRICS = ["mrr", "precision@5"]
-DISPLAY_NAMES = {"bm25": "BM25", "tfidf": "TF-IDF", "dense": "Dense", "sparse": "SPLADE"}
+DISPLAY_NAMES = {"bm25": "BM25", "tfidf": "TF-IDF", "dense": "Dense", "sparse": "SPLADE", "sparse_zeroshot": "SPLADE (zero-shot)"}
 
 RRF_PREFIX = "rrf:"
 
@@ -90,7 +90,7 @@ def load_run(collection, model, qset):
         run = fuse_rrf(collection, model[len(RRF_PREFIX):].split("+"), qset)
     else:
         run = Run.from_file(str(RUNS_DIR / run_filename(collection, model, qset)), kind="trec")
-    run.name = DISPLAY_NAMES.get(model, model)
+    run.name = display_name(model)
     return run
 
 def available_models(collection, models, qset):
