@@ -36,16 +36,15 @@ env/
 *_index.json
 
 # ── Paper ──────────────────────────────────────────────────────────
-paper/paper.aux
-paper/paper.fdb_latexmk
-paper/paper.fls
-paper/paper.log
-paper/paper.synctex.gz
-paper/paper.bbl
-paper/paper.blg
-paper/paper.out
-paper/*.synctex(busy)
-paper/notes.md
+paper/*/*.aux
+paper/*/*.fdb_latexmk
+paper/*/*.fls
+paper/*/*.synctex.gz
+paper/*/*.bbl
+paper/*/*.blg
+paper/*/*.out
+paper/*/*.synctex(busy)
+paper/*/notes.md
 
 # ── Logs ──────────────────────────────────────────────────────────
 *.log
