@@ -31,7 +31,7 @@ from datasets import Dataset
 from sentence_transformers import SentenceTransformer, SentenceTransformerTrainer, SentenceTransformerTrainingArguments
 from sentence_transformers.sentence_transformer import losses
 from sentence_transformers.sentence_transformer.training_args import BatchSamplers
-from sentence_transformers.evaluation import InformationRetrievalEvaluator
+from sentence_transformers.sentence_transformer.evaluation import InformationRetrievalEvaluator
 from transformers import EarlyStoppingCallback
 
 from src.training.data import load_examples
@@ -46,7 +46,7 @@ CHECKPOINT_DIR = REPO_ROOT / "checkpoints" / "dense"
 CLEANING_CONFIG = REPO_ROOT / "config" / "preprocessing_neural.yaml"
 
 DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-BEST_METRIC = "eval_val_cosine_ndcg@10"
+BEST_METRIC = "eval_validation_cosine_ndcg@10"
 
 def build_triples(data_path, paragraphs_path, cleaning):
     """One (query, positive, hard negative) row per judged positive."""
@@ -85,7 +85,7 @@ def parse_args():
     parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Base model (default: {DEFAULT_MODEL})")
     parser.add_argument("--batch-size", type=int, default=32, help="Triples per batch, more means more in-batch negatives (default: 32)")
     parser.add_argument("--epochs", type=int, default=5, help="Maximum epochs; early stopping may end sooner (default: 5)")
-    parser.add_argument("--learning-rate", type=float, defualt=2e-5, help="Learning rate (default: 2e-5)")
+    parser.add_argument("--learning-rate", type=float, default=2e-5, help="Learning rate (default: 2e-5)")
     parser.add_argument("--eval-steps", type=int, default=50, help="Evaluate and checkpoint every N steps (defualt: 50)")
     parser.add_argument("--patience", type=int, default=3, help="Evaluations without improvement before stopping (default: 3)")
     return parser.parse_args()
@@ -296,7 +296,7 @@ def create_training_arguments(args, output_dir, num_train_examples):
         num_train_epochs=args.epochs,
         per_device_train_batch_size=args.batch_size,
         learning_rate=args.learning_rate,
-        warmup_steps=(0.1 * total_steps),
+        warmup_steps=int(0.1 * total_steps),
         fp16=True,
         batch_sampler=BatchSamplers.NO_DUPLICATES, # no query twice in a batch, so its other postives aren't used as negatives
         eval_strategy="steps",
