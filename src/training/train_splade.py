@@ -32,7 +32,7 @@ from datasets import Dataset
 from sentence_transformers.sparse_encoder import SparseEncoder, SparseEncoderTrainer, SparseEncoderTrainingArguments
 from sentence_transformers.sparse_encoder.evaluation import SparseInformationRetrievalEvaluator
 from sentence_transformers.sparse_encoder.losses import SparseMultipleNegativesRankingLoss, SpladeLoss
-from sentence_transformers.training_args import BatchSamplers
+from sentence_transformers.sentence_transformer.training_args import BatchSamplers
 from transformers import EarlyStoppingCallback
 
 from src.common.paragraphs import load_paragraph_texts

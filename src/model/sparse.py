@@ -13,7 +13,7 @@ class SparseSearcher:
         self.index = SparseIndexer.load_index(index_path)
         
         print(f"Initializing encoder ({model_name})...")
-        self.encoder = SpladeEncoder(model_name_or_path=model_name)
+        self.encoder = SpladeEncoder(model_name=model_name)
 
     def search(self, query_text, k=5):
         """
@@ -31,30 +31,31 @@ class SparseSearcher:
         sparse_query_list = self.encoder.encode([query_text])
         query_vector = sparse_query_list[0] # Extract the first (and only) query dict
 
-        # Step 2: Search the index using matrix multiplication and argpartition
-        raw_results = self.index.search(query_vector, k=k) # Returns [(doc_id, score), ...]
+        return self.index.search(query_vector, k=k)
+        # # Step 2: Search the index using matrix multiplication and argpartition
+        # raw_results = self.index.search(query_vector, k=k) # Returns [(doc_id, score), ...]
         
-        if not raw_results:
-            return []
+        # if not raw_results:
+        #     return []
 
-        # Extract just the doc_ids to fetch their text
-        doc_ids = [doc_id for doc_id, score in raw_results]
+        # # Extract just the doc_ids to fetch their text
+        # doc_ids = [doc_id for doc_id, score in raw_results]
         
-        # Load the matching paragraph text from your corpus file
-        repo_root = Path(__file__).resolve().parents[2]
-        paragraphs_path = repo_root / "data" / "processed_neural" / "paragraphs.jsonl"
-        text_mapping = load_paragraph_texts(paragraphs_path, doc_ids=doc_ids)
+        # # Load the matching paragraph text from your corpus file
+        # repo_root = Path(__file__).resolve().parents[2]
+        # paragraphs_path = repo_root / "data" / "processed_neural" / "paragraphs.jsonl"
+        # text_mapping = load_paragraph_texts(paragraphs_path, doc_ids=doc_ids)
 
-        # Format final results
-        formatted_results = []
-        for doc_id, score in raw_results:
-            formatted_results.append({
-                "doc_id": doc_id,
-                "score": score,
-                "text": text_mapping.get(doc_id, "Text not found")
-            })
+        # # Format final results
+        # formatted_results = []
+        # for doc_id, score in raw_results:
+        #     formatted_results.append({
+        #         "doc_id": doc_id,
+        #         "score": score,
+        #         "text": text_mapping.get(doc_id, "Text not found")
+        #     })
 
-        return formatted_results
+        # return formatted_results
 
 
 if __name__ == "__main__":
