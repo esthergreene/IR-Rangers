@@ -98,6 +98,10 @@ python -m src.index.indexer
 ```
 
 ```bash
+python -m src.index.sparse_indexer
+```
+
+```bash
 python scripts/build_paper_metadata.py
 ```
 
