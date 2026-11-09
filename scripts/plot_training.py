@@ -44,7 +44,7 @@ def main():
     title = f"{args.model.capitalize()} fine-tuning"
     
     # Save output to paper/figures/ at the repo root
-    output = Path("paper") / "figures" / f"training_{args.model}_{args.run}.png"
+    output = Path("paper") / "part2" / "figures" / f"training_{args.model}_{args.run}.png"
 
     history = load_trainer_state(run_dir)["log_history"]
     state = load_trainer_state(run_dir)
