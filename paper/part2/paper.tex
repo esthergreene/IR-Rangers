@@ -109,12 +109,31 @@ rank fusion, scientific document retrieval, passage retrieval}
 
 \subsection{Dense Retrieval}
 \label{sec:dense}
-% TODO: bi-encoder all-MiniLM-L6-v2 \cite{wang2020minilm, reimers2019sentence},
-%   384-dim mean-pooled embeddings, cosine / inner product.
-% TODO fine-tuning: MultipleNegativesRankingLoss, batch 32, lr 2e-5, up to 5 epochs,
-%   same early stopping. Confirm run1's actual values.
-% TODO index: exact inner-product FAISS index \cite{johnson2019billion} (confirm
-%   flat vs. approximate) over all 2.28M paragraphs.
+For dense retrieval, we used the pretrained
+\texttt{all-MiniLM-L6-v2} Sentence-BERT bi-encoder
+\cite{wang2020minilm,reimers2019sentence}. The model
+encodes queries and paragraphs into 384-dimensional
+dense embeddings. This lets us have retrieval based on semantic
+similarity rather than exact term overlap. Embeddings
+were normalized so that inner-product similarity is
+equivalent to cosine similarity.
+
+We fine-tuned the model using 5,138 query-positive
+paragraph pairs with MultipleNegativesRankingLoss,
+which treats other positive passages within a batch
+as in-batch negatives. Training used a batch size of 
+16, a learning rate of $2 \times 10^{-5}$, and five
+epochs. We then performed validation after each epoch,
+and the checkpoint with the highest validation nDCG@10
+was selected. The best checkpoint was obtained after
+the second epoch. 
+
+We indexed 2,275,547 paragraph embeddings using
+FAISS \cite{johnson2019billion}. Specifically, we
+used \texttt{IndexFlatIP}, which performs exact 
+inner-product search. Each query was encoded using
+the same bi-encoder, and the index returned the highest-
+scoring paragraphs based on similarity. 
 
 \subsection{Paper Ranking}
 \label{sec:maxp}
@@ -164,6 +183,13 @@ rank fusion, scientific document retrieval, passage retrieval}
   }
   \label{fig:training}
 \end{figure}
+
+For Dense retrieval, we trained the model for five epochs and evaluated
+its performance after each epoch. The checkpoint from the second epoch 
+achieved the highest validation nDCG@10 and was selected for our final 
+retrieval experiments. Although training continued for all five epochs, 
+the later checkpoints did not improve validation retrieval performance.
+
 % TODO describe curves: when val loss flattens, where early stopping picked
 %   the best checkpoint, any overfitting gap.
 
@@ -193,9 +219,17 @@ rank fusion, scientific document retrieval, passage retrieval}
     \bottomrule
   \end{tabular}
 \end{table*}
-% TODO text: SPLADE best everywhere; on papers both neural > BM25; on
-%   paragraphs SPLADE vs BM25 not significant (except R@100), and Dense is
-%   below BM25 (not significant). Part 1 baseline vs Part 2 comparison lives here.
+
+For Dense retrieval, we observed different results between paper-level and
+paragraph-level retrieval. On papers, Dense achieved an nDCG of 0.640 
+compared to 0.582 for BM25, representing a statistically significant 
+improvement. However, on paragraphs, Dense achieved an nDCG of 0.447 compared 
+to 0.474 for BM25. This difference was not statistically significant. 
+
+These results suggest that Dense retrieval was more effective at identifying
+relevant papers than ranking individual relevant paragraphs. One possible
+explanation is our MaxP paper-ranking approach, which uses the highest-scoring
+retrieved paragraph to represent each paper. 
 
 \subsection{Effect of Fine-Tuning}
 \label{sec:finetune}
@@ -219,8 +253,27 @@ rank fusion, scientific document retrieval, passage retrieval}
     \bottomrule
   \end{tabular}
 \end{table*}
-% TODO text: no significant gain from fine-tuning for either model;
-%   zero-shot Dense is significantly better on paper P@5 and P@10. Explanation in §4.5.
+
+As shown in Table~\ref{tab:finetune}, fine-tuning
+did not lead to significant improvements for either
+neural model. For Dense retrieval, paper-level nDCG
+increased from 0.635 to 0.640, while paragraph-level
+nDCG decreased from 0.458 to 0.447. The zero-shot 
+Dense model also performed significantly better on
+paper-level P@5, scoring 0.166 compared to 0.156 for 
+the fine-tuned model ($p < 0.05$). This suggests that
+fine-tuning did not consistently improve Dense
+retrieval on our Study queries. Although paper-level
+nDCG increased slightly, paragraph-level nDCG and
+paper-level P@5 decreased. 
+
+SPLADE showed small improvements after fine-tuning,
+with paragraph-level nDCG increasing from 0.485 to
+0.494. What we see is that these improvements were 
+not really that statistically significant. Overall, 
+our results suggest that fine-tuning did not provide 
+a clear advantage over the pretrained models on the 
+Study query set.
 
 \subsection{Rank Fusion}
 \label{sec:fusion-results}
@@ -326,13 +379,25 @@ rank fusion, scientific document retrieval, passage retrieval}
 
 \subsection{Comparing the Neural Models}
 \label{sec:neural-compare}
-% TODO: SPLADE > Dense everywhere (significant on paragraphs). SPLADE keeps
-%   exact term matching (weights on real vocabulary terms) plus expansion,
-%   which matters for technical names/acronyms; Dense compresses a paragraph
-%   into 384 dims, losing rare terms. MiniLM is small and general-domain.
-% TODO: why Dense beats BM25 on papers but not paragraphs: MaxP lets a paper
-%   win through any of ~66 paragraphs, so semantic near-misses still surface
-%   the right paper; for paragraphs, a near-miss is simply wrong.
+As we see in Table~\ref{tab:main}, SPLADE performed better
+than Dense retrieval on both papers and paragraphs. For paper
+retrieval, SPLADE was able to get and nDCG of 0.671 compared
+to 0.640 for Dense. For paragraph retrieval, SPLADE also 
+performed better, with an nDCG of 0.494 compared to 0.447. The
+differences in paragraph-level nDCG were stastistically significant.
+
+One possible explanation is how the two models represent text. SPLADE
+uses vocabulary-based representations that can preserve important 
+technical terms while also expanding beyond exact word matches Dense
+retrieval represents each paragraph using a 384-dimensional embedding, 
+which helps capture semantic similarity but may lose some specific
+technical information. 
+
+Dense retrieval also performed better than BM25 on papers, but not on
+paragraphs. This may be partly due to our paper-ranking approach, where
+a paper receives the score of its highest-ranked paragraph. This gives 
+Dense more opportunities to identify a relevant paper, even when it 
+does not rank the exact relevant paragraph highly.
 
 \subsection{Comparison with the BM25 Baseline}
 \label{sec:vs-bm25}
@@ -367,31 +432,68 @@ rank fusion, scientific document retrieval, passage retrieval}
 
 \subsection{Why Fine-Tuning Gave Little}
 \label{sec:why-finetune}
-% TODO hypotheses:
-% - both base models are already trained on large retrieval data (MS MARCO /
-%   1B pairs); ~1,800 Train queries is a small signal on top
-% - negatives come from BM25, so the model learns to beat BM25-style
-%   distractors, not its own errors
-% - checkpoint selection on validation nDCG@10 over a small query set is noisy
-% - Train judgments are sparse: some ``negatives'' may be unjudged relevant
-%   paragraphs (why we skip BM25's top 20)
+One possible reason fine-tuning did not improve our
+results significantly is that both pretrained models had
+already learned useful representations from large training
+datasets. Our training set contained around 1,800 queries,
+which may not have been enough to make a noticeable improvement 
+over the original models. This could be an explanation of why
+we saw only small changes in retrieval performance after fine-tuning.
+
+Another possible factor is how the training data was prepared. For 
+SPLADE, hard negatives were selected using BM25 rankings, which may 
+have limited the model's exposure to mistakes from its own retrieval 
+results. For Dense retrieval, we used in-batch negatives rather than 
+directly training on the BM25-selected negatives. This may have limited
+the variety of difficult examples the model encountered. 
+
+Also, our relevance judgements were limited, meaning some paragraphs
+treated as negative examples may have actually been relevant. We attempted
+to reduce this risk during BM25 negative sampling by skipping the top 20
+results. Finally, selecting checkpoints using validation nDCG@10 from a 
+relatively small query set may have contributed to differences between
+validation performance and our final Study results.
 
 \subsection{Why Fusion Helps}
 \label{sec:why-fusion}
-% TODO: the models fail on different queries (term-matching vs semantic
-%   errors), so a document ranked well by two of them is usually right.
-%   Supporting stat: overlap of top-10 results between models, or count of
-%   queries where each model is the only one with a relevant doc in its top 5.
+Our results suggest that combining different retrieval models can improve
+performance because each model approaches retrieval differently. BM25 focuses
+on exact term matching, SPLADE combines term matching with learned expansion, 
+and Dense retrieval uses semantic similarity. Because of these differences, 
+the models may retrieve relevant documents that the others miss. 
+
+As we see in Table~\ref{tab:fusion}, combining all three models using 
+Reciprocal Rank Fusion (RRF) produced the best overall results. Paper-level
+nDCG increased from 0.671 for SPLADE alone to 0.701 for RRF, while
+paragraph-level nDCG increased from 0.494 to 0.550.
+
+Something interesting to note is that adding Dense to the BM25 and SPLADE
+combination improved paragraph-level nDCG from 0.531 to 0.550, even though Dense
+had the lowest individual paragraph-level nDCG. This suggests that Dense
+contributed useful retrieval results that complemented the other two models.
 
 \subsection{Strengths and Weaknesses}
 \label{sec:strengths}
-% TODO short summary per system:
-%   BM25: exact names/acronyms, cheap, interpretable; fails on paraphrase.
-%   SPLADE: best single model, keeps term matching + expansion; larger index,
-%     GPU encoding, still fooled by shared terms across fields.
-%   Dense: best at pure paraphrase, small index; loses rare technical terms,
-%     weakest on paragraphs.
-%   RRF: best overall; costs three retrievers per query.
+Each retrieval approach had different strengths and weaknesses. BM25 was
+useful for matching exact terms, including technical names and acronyms.
+It was also relatively simple and efficient, but struggled when queries 
+used different terminology from relevant documents. 
+
+SPLADE was our strongest individual retrieval model. By combining
+vocabulary-based matching with learned term expansion, it could retrieve
+relevant documents even when the query and document did not use exactly
+the same words. However, it still had limitations when similar terms
+appeared in unrelated scientific contexts. It also required more
+computational resources than BM25. 
+
+Dense retrieval was useful for capturing semantic similarity between queries
+and documents, but it performed worse than SPLADE overall. Its compact
+embeddings may have lost some important technical details, particularly 
+when retrieving specific paragraphs.
+
+Finally, RRF achieved the best overall performance by combining the rankings 
+from all three models. This approach also required running multiple retrieval
+systems, increasing computational cost compared to using a single model. 
 
 %======================================================================
 \section{Conclusion}
