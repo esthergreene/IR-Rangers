@@ -36,7 +36,7 @@ Each line looks like:
 
 Usage, from the repository root:
     python scripts/build_training_data.py
-    python scripts/build_traqining_data.py --val-fraction 0.15 --num-negatives 50
+    python scripts/build_training_data.py --val-fraction 0.15 --num-negatives 50
 """
 import argparse
 import json

@@ -11,6 +11,7 @@ import numpy as np
 import faiss
 from sentence_transformers import SentenceTransformer
 import json
+from pathlib import Path
 
 class DenseModel:
     """
@@ -105,4 +106,13 @@ class DenseModel:
 
         with open(ids_path, "r", encoding="utf-8") as file:
             self.doc_ids = json.load(file)
-        
+
+class DenseSearcher:
+    """Adapter for scripts/run_retrieval.py: search(query, k) over a saved FAISS index."""
+    def __init__(self, index_path, model_name="sentence-transformers/all-MiniLM-L6-v2"):
+        index_path = Path(index_path)
+        self.model = DenseModel(model_name)
+        self.model.load_index(index_path, index_path.with_name(index_path.stem + "_ids.json"))
+
+    def search(self, query, k=100):
+        return self.model.search(query, k=k)
