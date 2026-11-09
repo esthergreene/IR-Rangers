@@ -1,0 +1,56 @@
+========================
+% Add in preamble
+\usepackage{graphicx}
+\usepackage{booktabs}
+========================
+
+
+% To change the table size, act on the resizebox argument `0.8`.
+\begin{table*}[ht]
+\centering
+\caption{
+Overall effectiveness of the models.
+The best results are highlighted in boldface.
+Superscripts denote significant differences in paired Student's t-test with $p \le 0.05$.
+}
+\resizebox{0.8\textwidth}{!}{
+\begin{tabular}{c|l|c|c|c|c|c|c}
+\toprule
+\textbf{\#}
+& \textbf{Model}
+& \textbf{NDCG}
+& \textbf{NDCG@5}
+& \textbf{MRR}
+& \textbf{P@5}
+& \textbf{P@10}
+& \textbf{Recall@100} \\ 
+\midrule
+a &
+BM25 &
+0.582\hphantom{$^{bc}$} &
+0.514\hphantom{$^{bc}$} &
+0.544\hphantom{$^{bc}$} &
+0.137\hphantom{$^{bc}$} &
+0.080\hphantom{$^{bc}$} &
+0.803\hphantom{$^{bc}$} \\
+b &
+Dense &
+0.640$^{a}$\hphantom{$^{c}$} &
+0.592$^{a}$\hphantom{$^{c}$} &
+0.631$^{a}$\hphantom{$^{c}$} &
+0.156$^{a}$\hphantom{$^{c}$} &
+0.084\hphantom{$^{ac}$} &
+0.807\hphantom{$^{ac}$} \\
+c &
+SPLADE &
+\textbf{0.671}$^{a}$\hphantom{$^{b}$} &
+\textbf{0.631}$^{ab}$\hphantom{} &
+\textbf{0.658}$^{a}$\hphantom{$^{b}$} &
+\textbf{0.167}$^{ab}$\hphantom{} &
+\textbf{0.090}$^{ab}$\hphantom{} &
+\textbf{0.825}\hphantom{$^{ab}$} \\
+\bottomrule
+\end{tabular}
+}
+\label{tab:results}
+\end{table*}

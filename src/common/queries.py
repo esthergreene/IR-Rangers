@@ -51,7 +51,7 @@ def load_queries(path):
             raise ValueError(f"{path}: query at position {position} is missing {missing}.")
         query_id = str(record["query_id"])
         if query_id in seen_ids:
-            raise ValueError(f"{path}: query_id {quer_id} appears more than once.")
+            raise ValueError(f"{path}: query_id {query_id} appears more than once.")
         seen_ids.add(query_id)
         
         queries.append(Query(

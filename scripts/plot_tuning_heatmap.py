@@ -40,7 +40,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Plot a BM25 tuning grid as a heatmap.")
     parser.add_argument("csv", type=Path, help="Grid CSV written by tune_bm25.py")
     parser.add_argument("--output", type=Path, default=None,
-                        help="Output file (default: paper/figures/<csv name>.pdf)")
+                        help="Output file (default: paper/part1/figures/<csv name>.pdf)")
     return parser.parse_args()
 
 
@@ -66,7 +66,7 @@ def read_grid(path):
 
 def main():
     args = parse_args()
-    output = args.output or REPO_ROOT / "paper" / "figures" / f"{args.csv.stem}.pdf"
+    output = args.output or REPO_ROOT / "paper" / "part1" / "figures" / f"{args.csv.stem}.pdf"
     metric, k1_values, b_values, grid = read_grid(args.csv)
 
     fig, ax = plt.subplots(figsize=(3.4, 3.0))  # about one ACM column wide

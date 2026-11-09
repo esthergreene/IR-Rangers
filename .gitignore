@@ -2,11 +2,12 @@
 # Everything under data/raw is re-downloaded by scripts/setup.sh, and everything
 # under data/processed is rebuilt by the scripts in src/ and scripts/.
 data/raw
-data/processed/
-data/processed_sample/
+data/processed*/
+/data
 
 # ── Model artifacts and run outputs ─────────────────────────────────────────
-checkpoints/
+checkpoints
+/checkpoints
 runs/
 results/
 *.faiss
@@ -35,16 +36,25 @@ env/
 *_index.json
 
 # ── Paper ──────────────────────────────────────────────────────────
-paper/paper.aux
-paper/paper.fdb_latexmk
-paper/paper.fls
-paper/paper.log
-paper/paper.synctex.gz
-paper/paper.bbl
-paper/paper.blg
-paper/paper.out
-paper/*.synctex(busy)
-paper/notes.md
+paper/*/*.aux
+paper/*/*.fdb_latexmk
+paper/*/*.fls
+paper/*/*.synctex.gz
+paper/*/*.bbl
+paper/*/*.blg
+paper/*/*.out
+paper/*/*.synctex(busy)
+paper/*/notes.md
 
 # ── Logs ──────────────────────────────────────────────────────────
 *.log
+
+# Dense retrieval artifacts
+data/dense_indexes/
+models/finetuned_dense_checkpoints/
+models/finetuned_dense/
+data/processed_neural/
+data/processed_neural_sample/
+
+# Saved machine learning models
+models/

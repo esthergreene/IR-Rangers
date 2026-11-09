@@ -44,6 +44,11 @@ TOKEN_PATTERN = re.compile(r"[^\W_]+")
 # Letters, digits, and underscores; used by the baseline configuration only.
 WORD_PATTERN = re.compile(r"\w+")
 
+# For neural models
+WHITESPACE = re.compile(r"\s")
+SPACE_BEFORE_PUNCT = re.compile(r"\s+([.,;:!?)\]])")   # e.g., "showin in ." -> "shown in."
+EMPTY_BRACKETS = re.compile(r"\(\s*\)|\[\s*\]")        # "( )" left behind by removed math
+
 STOPWORD_SOURCES = {"nltk", "custom", "none"}
 STEMMERS = {"none", "porter", "snowball"}
 
@@ -63,6 +68,41 @@ def load_config(config_path=DEFAULT_CONFIG_PATH):
     """
     with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
+
+def load_cleaning_config(config_path):
+    """
+    Read only the cleaning section of a preprocessing config.
+
+    Args:
+        config_path (str or Path): Path to the YAML config file.
+    
+    Returns:
+        dict: Keyword arguments for clean_text().
+    """
+    cleaning_config = load_config(config_path).get("cleaning") or {}
+    _check_keys(cleaning_config, CLEANING_KEYS, "cleaning")
+    return {key: bool(cleaning_config.get(key, False)) for key in CLEANING_KEYS}
+
+def clean_for_encoder(text, **cleaning):
+    """
+    Clean text for a neural encoder: remove noise but keep the words as written.
+
+    Skips lowercasing, stopword removal, and stemming, since neural models 
+    use their own subword tokenizers. Documents and queries should both go through
+    this with the same settings.
+
+    Args:
+        text (str): Raw text from a document or query.
+        **cleaning: Settings from load_cleaning_config().
+
+    Returns:
+        str: The cleaned text, possibly empty.
+    """
+    text = clean_text(text, **cleaning)
+    text = EMPTY_BRACKETS.sub(" ", text)
+    text = WHITESPACE.sub(" ", text)
+    text = SPACE_BEFORE_PUNCT.sub(r"\1", text)
+    return text.strip()
 
 def _check_keys(section, allowed, name):
     """Reject unknown config keys, so a typo like "remove_url" fails instead of being ignored."""

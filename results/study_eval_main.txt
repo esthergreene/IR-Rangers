@@ -1,0 +1,36 @@
+
+--- PAPER COLLECTION (study) ---
+
+================ Paper, graded ================
+#    Model    NDCG    NDCG@5    MRR     P@5      P@10       Recall@100
+---  -------  ------  --------  ------  -------  -------  ------------
+a    BM25     0.582   0.514     0.544   0.137    0.080           0.803
+b    Dense    0.640ᵃ  0.592ᵃ    0.631ᵃ  0.156ᵃ   0.084           0.807
+c    SPLADE   0.671ᵃ  0.631ᵃᵇ   0.658ᵃ  0.167ᵃᵇ  0.090ᵃᵇ         0.825
+(LaTeX table saved to results/latex/study_paper_graded.tex)
+
+================ Paper, strict (grade 2 only) ================
+#    Model    MRR     P@5
+---  -------  ------  -------
+a    BM25     0.535   0.124
+b    Dense    0.606ᵃ  0.141ᵃ
+c    SPLADE   0.645ᵃ  0.151ᵃᵇ
+(LaTeX table saved to results/latex/study_paper_strict.tex)
+
+--- PARAGRAPH COLLECTION (study) ---
+
+================ Paragraph, graded ================
+#    Model    NDCG    NDCG@5    MRR       P@5  P@10    Recall@100
+---  -------  ------  --------  ------  -----  ------  ------------
+a    BM25     0.474   0.416     0.516   0.174  0.107   0.592
+b    Dense    0.447   0.377     0.477   0.175  0.104   0.607
+c    SPLADE   0.494ᵇ  0.434ᵇ    0.539ᵇ  0.19   0.116ᵇ  0.630ᵃ
+(LaTeX table saved to results/latex/study_paragraph_graded.tex)
+
+================ Paragraph, strict (grade 2 only) ================
+#    Model    MRR     P@5
+---  -------  ------  -------
+a    BM25     0.450   0.115
+b    Dense    0.415   0.115
+c    SPLADE   0.484ᵇ  0.135ᵃᵇ
+(LaTeX table saved to results/latex/study_paragraph_strict.tex)

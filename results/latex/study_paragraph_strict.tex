@@ -1,0 +1,40 @@
+========================
+% Add in preamble
+\usepackage{graphicx}
+\usepackage{booktabs}
+========================
+
+
+% To change the table size, act on the resizebox argument `0.8`.
+\begin{table*}[ht]
+\centering
+\caption{
+Overall effectiveness of the models.
+The best results are highlighted in boldface.
+Superscripts denote significant differences in paired Student's t-test with $p \le 0.05$.
+}
+\resizebox{0.8\textwidth}{!}{
+\begin{tabular}{c|l|c|c}
+\toprule
+\textbf{\#}
+& \textbf{Model}
+& \textbf{MRR}
+& \textbf{P@5} \\ 
+\midrule
+a &
+BM25 &
+0.450\hphantom{$^{bc}$} &
+0.115\hphantom{$^{bc}$} \\
+b &
+Dense &
+0.415\hphantom{$^{ac}$} &
+0.115\hphantom{$^{ac}$} \\
+c &
+SPLADE &
+\textbf{0.484}$^{b}$\hphantom{$^{a}$} &
+\textbf{0.135}$^{ab}$\hphantom{} \\
+\bottomrule
+\end{tabular}
+}
+\label{tab:results}
+\end{table*}

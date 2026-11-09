@@ -6,7 +6,7 @@ plus a web search interface.
 COS 487/587 Introduction to Information Retrieval, Fall 2026, Course Project Part 1
 Team: Esther Greene, Courtney Jackson, Nathaniel Serrano
 
-The full write-up is in [`paper/paper.pdf`](paper/paper.pdf).
+The Part 1 write-up is in [`paper/part1/paper.pdf`](paper/part1/paper.pdf).
 
 ## Results
 
@@ -98,6 +98,10 @@ python -m src.index.indexer
 ```
 
 ```bash
+python -m src.index.sparse_indexer
+```
+
+```bash
 python scripts/build_paper_metadata.py
 ```
 
@@ -176,10 +180,10 @@ src/common/          query loading, TREC run files, BM25 config
 scripts/             install, run, collection building, retrieval, tuning, plots
 interface/           FastAPI backend and React frontend
 annotation/          our Test query judgments
-paper/               LaTeX source, figures and PDF of the paper
+paper/part1, part2/  LaTeX source, figures and PDF of each part's paper
 ```
 
-## Contributions
+## Part 1 Contributions
 
 - **Preprocessing:** Nathaniel
 - **Indexing:** Esther
