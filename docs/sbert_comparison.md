@@ -37,18 +37,45 @@ Precision@10 increased as well, showing that more judged-relevant paragraphs app
 
 Overall the fine-tuning resulted in roughly a 10% relative improvement across all three metrics, which was a good outcome for this experiment. 
 
+## Study Query Evaluation
+
+After evaluating both Sentence-BERT models on the 200 held-out validation queries, I also tested them using the 250 Study queries. This allowed me to compare the pretrained and fine-tuned models against BM25 using the same queries, relevance judgments, and evaluation pipeline.
+
+All three models retrieved the top 100 paragraphs from the same collection of 2,275,547 paragraphs.
+
+| Metric | BM25 | Pretrained SBERT | Fine-Tuned SBERT |
+|---|---:|---:|---:|
+| nDCG | 0.457 | 0.458 | 0.447 |
+| nDCG@5 | 0.394 | 0.385 | 0.373 |
+| MRR | 0.487 | 0.484 | 0.476 |
+| Precision@5 | 0.164 | 0.174 | 0.170 |
+| Precision@10 | 0.101 | 0.107 | 0.109 |
+| Recall@100 | 0.594 | 0.633 | 0.605 |
+
+These results were different from what I observed during validation. Although fine-tuning improved performance on the held-out validation queries, the pretrained Sentence-BERT model performed better on most metrics when evaluated using the Study queries.
+
+The pretrained model achieved higher nDCG, MRR, Precision@5, and Recall@100 than the fine-tuned model. However, the fine-tuned model had a slightly higher Precision@10 score.
+
+One interesting result was that pretrained Sentence-BERT achieved a Recall@100 of 0.633, compared to 0.594 for BM25 and 0.605 for fine-tuned Sentence-BERT. According to the evaluation script's paired significance test, this difference was statistically significant (p < 0.05) against both models.
+
+Overall, these results suggest that the improvements from fine-tuning did not generalize to the Study queries as expected. One possible explanation is that the fine-tuned model learned patterns from the training data that were less useful for the Study queries, although further testing would be needed to determine why.
+
 ## Limitations
 
-One thing to keep in mind is that these results are based on 200 held out validation queries rather than a separate test set. I also haven't tested whether the improvements are statistically significant. 
+One limitation of this experiment is that the initial validation results were based on 200 held-out queries from the Train dataset. Although the fine-tuned model performed better on those queries, the improvement did not carry over to the 250 Study queries.
 
-Our team's existing BMM25 and TF-IDF results were evaluated using the Study queries, so those scores aren't directly comparable to these results just yet.
+The validation improvements were not tested for statistical significance. In the Study evaluation, the pretrained model achieved significantly higher Recall@100 than both BM25 and the fine-tuned model, but the other differences were not reported as statistically significant.
 
-Another limitation is that not every relevant paragraph is necessarily included in the relevance judgements, which could affect the evaluation scores. 
+Another limitation is that not every relevant paragraph is necessarily included in the relevance judgments, which could affect the evaluation scores.
+
+It is also possible that the fine-tuning process caused the model to become too specialized for the training data. However, more testing would be needed to determine whether this was actually the case.
 
 ## Conclusion
 
-Based on these resylts, fine-tuning Sentence-BERT appears to have improved paragraph retrieval performance for our dataset, but not as good as our other model.
+This experiment showed that fine-tuning Sentence-BERT improved paragraph retrieval performance on the held-out validation queries, with approximately 10% relative improvement across nDCG@10, MRR@10, and Precision@10.
 
-The fine-tuned model outperformed the original pretrained model across all three metrics, with improements of approximately 10%, which is good. 
+However, when I evaluated both models using the Study queries, the pretrained Sentence-BERT model performed better on most metrics. The fine-tuned model achieved a slightly higher Precision@10, but the pretrained model had better overall ranking and recall results.
 
-The next step is to evaluate Sentence-BERT using the Study queries so we can compare its performance against the other retrieval models our team has implemented.
+The pretrained model also achieved the highest Recall@100 of the three models evaluated, significantly outperforming both BM25 and fine-tuned Sentence-BERT on that metric.
+
+Overall, I found that fine-tuning can improve retrieval performance, but those improvements do not necessarily generalize to different query sets. This was an important finding because it showed why evaluating models on more than one set of queries matters.
