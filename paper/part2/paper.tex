@@ -56,13 +56,71 @@ rank fusion, scientific document retrieval, passage retrieval}
 % TODO para 3: copy the tasks / query sets / grading-scale paragraph from Part 1.
 % TODO para 4: what's new: SPLADE and a dense bi-encoder, each zero-shot and
 %   fine-tuned on Train; MaxP for papers; RRF fusion. Headline results.
+The volume of scientific literature makes finding relevant work increasingly 
+difficult, both at the level of whole papers and of the specific passages 
+that answer a question. In the first phase of this project, we built a retrieval 
+system for arXiv papers and paragraphs\footnote{Code: \url{https://github.com/esthergreene/IR-Rangers}} 
+using two term-matching models, and found that BM25 significantly outperformed 
+TF-IDF on both tasks. Our analysis also exposed the limits of exact term matching: 
+hard queries that paraphrase technical terminology in general language, for 
+example asking about ``wrist-worn optical sensors'' rather than PPG. share few 
+terms with the document that answer them, and BM25 often failed on them, especially 
+for paragraphs.
 
-%======================================================================
+This paper describes the second phase, in which we add two neural retrieval models 
+intended to bridge this vocabulary gap: a learned sparse model, SPLADE~\cite{formal2021splade}, 
+which represents text as weights over vobcablulary terms, including related terms the 
+text does not contain, and a dense bi-encoder~\cite{reimers2019sentence}, which 
+represents text as a single embedding vector. We evaluate each model both as released 
+and after fine-tuning on our Train queries, rank papers by their best-scoring 
+paragraph~\cite{dai2019deeper}, and combine all three models with reciprocal rank 
+fusion~\cite{cormack2009reciprocal}. BM25, our best model from part 1, serves as the 
+baseline throughout.
+
+The test collection consists of 34,308 arXiv papers published in August and September 2024. 
+Each paper is provided both as raw HTML scraped from the ar5iv website and as a 
+processed JSON file containing its identifier, title, abstract, and paragraphs. 
+Because the JSON files were produced with rule-based extraction, they contain noise 
+such as leftover \LaTeX{} markup and merged words, and display equations are missing 
+altogether. In total, the collection contains 2,275,574 paragraphs, an average 
+of about 66 per paper.
+
+We address two tasks over this collection: \emph{paper retrieval}, which returns 
+papers identified by their arXiv ID, and \emph{paragraph retrieval}, which returns 
+individual paragraphs. For each query, systems return their top 100 results. Three 
+query sets are provided: Train (2,000 queries), Study (250 queries with relevance 
+judgements, which we use for all analysis in this paper), and Test (250 queries 
+whose judgments are withheld). Each set contains 30\% easy, 50\% medium, and 25\% 
+hard queries. Relevance is graded on a three-point scale: a document that fully 
+addresses the query is relevant (2), one that provides useful information without 
+fully addressing it is partially relevant (1), and any document not in the judgments 
+is considered non-relevant.
+
+SPLADE is the most effective single model on both tasks. On papers it improves nDCG@5 
+over BM25 from 0.514 to 0.631; on paragraphs its advantage is smaller and not significant. 
+The dense model outperforms BM25 on papers but not on paragraphs, and fine-tuning did 
+not significantly improve either neural model. Fusing all three models gives the best 
+results, with nDCG of 0.701 on papers and 0.550 on paragraphs, significantly above both 
+BM25 and SPLADE alone. Our analysis shows that the neural models retrieve paragraphs 
+that paraphrase the query, but still rank highly paragraphs that share the query's 
+vobcabulary in an unrelated field.
+
 \section{Methodology}
 \label{sec:method}
 % TODO overview paragraph: one pipeline, three first-stage retrievers
 %   (BM25, SPLADE, dense), paragraph-level neural indexes, papers via MaxP,
 %   optional RRF fusion.
+Our system retrieves with three first-stage models that share the query 
+sets, run format, and evaluation pipeline. BM25 (Section~\ref{sec:bm25}) 
+searches inverted indexes over separately preprocessed paper and paragraph 
+collections, as in Part~1. The two neural models, SPLADE (Section~\ref{sec:splade}) 
+and a dense bi-encoder (Section~\ref{sec:dense}), receive more lightly preprocessed 
+text (Section~\ref{sec:preprocessing}) and index paragraphs only. Both start from 
+publically released checkpoints, which we evaluate as released and after fine-tuning 
+on Train queries (Section~\ref{sec:training-data}). Because the neural indexes contain 
+only paragraphs, papers are ranked from their paragraphs' scores (Section~\ref{sec:maxp}). 
+Finally, runs from different models can be combined with reciprocal rank fusion 
+(Section~\ref{sec:rrf}). Section~\ref{sec:eval} describes our evaluation setup.
 
 \subsection{Preprocessing}
 \label{sec:preprocessing}
@@ -72,6 +130,19 @@ rank fusion, scientific document retrieval, passage retrieval}
 %   inline math, URLs and citation markers removed; no stemming or stopword
 %   removal, since the models use their own WordPiece tokenizers.
 %   Mention the max input length / truncation if relevant.
+BM25 and the neural models receive differently preprocessed text, because they 
+match text in different ways.
+
+For BM25, we keep the Part~1 pipeline unchanged. Inline mathematics, remaining 
+\LaTeX{} commands, URLs, and numeric citation markers are removed; text is 
+lowercased and split into alphanumeric tokens; tokens shorter than two characters 
+or consisting only of digits are discarded; stopwords are removed using NLTK's English 
+list~\cite{bird2009nltk}, extended with terms common in scientific writing such as ``et'', 
+``al'', and ``fig''; and the remaining tokens are reduced with the Snowball 
+stemmer~\cite{porter2001snowball}. Cleaning reduces the paragraph collection from 
+168.0 to 114.9 million tokens (31.6\%) and leaves 8,389 paragraphs, almost all 
+standalone formulas, empty. These are excluded, leaving 2,267,185 indexed paragraphs. 
+Both encoders trucate their input at 256 WordPiece tokens.
 
 \subsection{BM25 Baseline}
 \label{sec:bm25}
@@ -80,11 +151,63 @@ rank fusion, scientific document retrieval, passage retrieval}
 %   Cut TF-IDF entirely. The held-out tuning table can become one sentence.
 % Reuse the Part 1 heatmap figure (bm25_tuning_paper_full.pdf,
 %   bm25_tuning_paragraph_full.pdf) -- found via \graphicspath.
+Our baseline is the BM25 model from Part~1, unchanged. It scores a document 
+$d$ for a query $q$ as 
+\begin{equation}
+  \mathrm{score}(q,d) = \sum_{t \in q} \mathit{idf}_t \cdot
+    \frac{\mathit{tf}_{t,d}\,(k_1 + 1)}
+         {\mathit{tf}_{t,d} + k_1 \bigl(1 - b + b\,L_d / L_{\mathit{avg}}\bigr)},
+  \label{eq:bm25}
+\end{equation}
+\begin{equation}
+  \mathit{idf}_t = \ln\!\left(1 + \frac{N - \mathit{df}_t + 0.5}{\mathit{df}_t + 0.5}\right),
+  \label{eq:idf}
+\end{equation}
+where $N$ is the number of documents, $\mathit{df}_t$ the number containing term 
+$t$, $\mathit{tf}_{t,d}$ the occurrences of $t$ in $d$, and $L_d$ and $L_{\mathit{avg}}$ 
+the length of $d$ and the average length, in tokens. This is the ``Lucene (accurate)'' 
+variant of Kamphuis et al.~\cite{kamphuis2020bm25}, whose IDF remains positive for 
+terms that occur in more than half of the documents. The parameter $k_1$ controls how 
+quickly repeated occurrences of a term saturate, and $b$ how strongly scores are 
+normalized by document length. Scoring is term-at-a-time over the postings of the query 
+terms, vectorized with NumPy.
+
+We tuned $k_1$ and $b$ separately for each collection by grid search on 1,600 Train 
+queries, selecting the setting with the highest nDCG@5 (Figure~\ref{fig:tuning}). The 
+selected settings, $k_1 = 4.0$, $b = 0.75$ for papers and $k_1 = 0.4$, $b = 0.9$ for 
+paragraphs, also outperformed both the textbook values ($k_1 = 1.2$, $b = 0.75$)~\cite{manning2008irbook} 
+and Anserini's defaults ($k_1 = 0.9$, $b = 0.4$)~\cite{yang2017anserini} on the remaining 
+400 Train queries (nDCG@5 of 0.473 vs.\ 0.454 and 0.436 on papers, and 0.371 vs.\ 0.354 
+and 0.344 on paragraphs). The tenfold difference in $k_1$ reflects document length: 
+in a paper averaging 3,361 tokens, repeated occurrences of a term indicate its topic, 
+whereas paragraphs, with a median of 40 tokens, rarely repeat a term, so whether a 
+term occurs at all matters more.
+
+\begin{figure}[t]
+  \centering
+  \begin{subfigure}{\columnwidth}
+    \includegraphics[width=\columnwidth]{bm25_tuning_paper_full.pdf}
+    \caption{Papers.}
+    \label{fig:tuning-paper}
+  \end{subfigure}
+
+  \vspace{0.5em}
+  \begin{subfigure}{\columnwidth}
+    \includegraphics[width=\columnwidth]{bm25_tuning_paragraph_full.pdf}
+    \caption{Paragraphs.}
+    \label{fig:tuning-paragraph}
+  \end{subfigure}
+  \caption{BM25 nDCG@5 on 1,600 Train tuning queries. Outlined cells
+    mark the selected settings.}
+  \label{fig:tuning}
+\end{figure}
+
+
 
 \subsection{Training Data}
 \label{sec:training-data}
 % TODO (scripts/build_training_data.py; confirm the flags actually used):
-% - only Train queries; split into train / validation by query (val fraction 0.1?)
+% - only Train queries; split into train / validation by query (val fraction 0.1)
 % - positives: judged paragraphs with grade >= 1 (confirm 1 vs 2)
 % - hard negatives: judged-0 paragraphs, then paragraphs sampled from BM25's
 %   ranking after skipping the top 20 (to avoid unjudged relevant ones);
@@ -93,6 +216,32 @@ rank fusion, scientific document retrieval, passage retrieval}
 % - leakage check: validation queries are disjoint from training queries; an
 %   earlier version with 160 of 200 validation queries also in training gave an
 %   inflated +9.65% that disappeared once fixed (1-2 sentences)
+We fine-tune both neural models on Train queries only; Study and Test queries are 
+never used for training or model selection. The 2,000 Train queries are split 
+by query into 1,800 training and 200 validation queries, stratified by difficulty 
+so that both sets keep the 30/50/20 mix of easy, medium, and hard queries, and no 
+validation query appears in training. Every paragraph judged relevant or partially 
+relevant serves as a positive, giving 5,138 positives for the training queries and 
+582 for the validation queries, about 2.9 per query.
+
+The Train judgments contain no non-relevant (grade 0) paragraphs, so negatives must 
+be mined. We use BM25 hard negatives: unjudged paragraphs that BM25 retrieves for the 
+query, which share vocabulary and topic with it and are therefore more informative 
+than random paragraphs. Because judgments are incomplete, an unjudged paragraph near 
+the top of BM25's ranking is often relevant, so we skip BM25's top 20 results and 
+sample 30 negatives per query at random from ranks 21--100, with a fixed seed per query. 
+Random sampling gives each query a mix of close and easier negatives rather than only 
+the hardest ones. Each training example is a (query, positive, negative) triple, one 
+per positive, cycling through the query's negatives. Both models are trained with a 
+contrastive loss in which each query's positive must outscore its own hard negative 
+as well as the positives and negatives of the other queries in the batch (Sections~\ref{sec:splade} 
+and~\ref{sec:dense}).
+
+Both models select their best checkpoint by nDCG@10 on the validation queries. Encoding 
+all 2.28 million paragraphs at every evaluation would take 30 to 60 minutes (Section~\ref{sec:efficiency}), 
+so validation instead ranks a fixed sample of the collection: every validation positive, 
+the top 100 BM25 results for each validation query, and 10,000 random paragraphs. Scores 
+on this sample are used only to compare checkpoints, not to report effectiveness.
 
 \subsection{Learned Sparse Retrieval}
 \label{sec:splade}
@@ -302,18 +451,23 @@ rank fusion, scientific document retrieval, passage retrieval}
 \subsection{Efficiency}
 \label{sec:efficiency}
 \begin{table}[t]
-  \caption{Index size, indexing time and per-query latency.
-    % TODO hardware: ant server CPU/GPU
-  }
+  \caption{Index size, indexing time, startup time and average query
+    latency on the 250 Study queries (papers / paragraphs). All times
+    were measured on one shared server with an Intel Core i7-11700 CPU
+    (2.50~GHz), 31~GiB of RAM and an NVIDIA RTX A5000 GPU (24~GB);
+    encoders run on the GPU and index search on the CPU. Query latency
+    includes query processing and, for neural paper runs, retrieving
+    2,000 paragraphs and MaxP. Neural models index only paragraphs. With
+    a checkpoint every 50,000 paragraphs, dense indexing took 70.1 minutes.}
   \label{tab:efficiency}
   \small
-  \begin{tabular}{lrrr}
+  \begin{tabular}{lrrrr}
     \toprule
-    Model & Index size & Indexing & Query (ms) \\
+    Model & Index & Indexing & Startup (s) & Query (ms) \\
     \midrule
-    BM25 (paragraphs) & TODO & TODO & TODO \\
-    SPLADE            & TODO & TODO & TODO \\
-    Dense             & TODO & TODO & TODO \\
+    BM25   & 242\,MB / 974\,MB & 81\,s / 175\,s & 15.6 / 34.6 & 7.3 / 62.4 \\
+    Dense  & 3.3\,GB          & 31.8\,min      & 64.5 / 41.0 & 231.6 / 230.1 \\
+    SPLADE & 2.8\,GB          & 63.4\,min      & 97.3 / 69.1 & 536.5 / 490.9 \\
     \bottomrule
   \end{tabular}
 \end{table}
