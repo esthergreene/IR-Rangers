@@ -495,18 +495,27 @@ give a fuller picture of how the models perform on hard queries.
 \subsection{Test Annotation}
 \label{sec:annotation}
 \begin{table}[t]
-  \caption{Our judgments of top-ranked Test paragraphs.
-    % TODO describe exactly what was judged (which models, what depth)
-  }
+  \caption{Grades of the top-ranked paragraph for the 250 Test queries,
+    by difficulty: fine-tuned SPLADE (Part~2) and BM25 (Part~1). For 79
+    queries both models ranked the same paragraph first, and its Part~1
+    grade was reused.}
   \label{tab:annotation}
   \small
-  \begin{tabular}{lrrr}
+  \begin{tabular}{lrrrr}
     \toprule
-    Grade & Dense & SPLADE & Both \\
+    Grade & Easy & Medium & Hard & All \\
     \midrule
-    Relevant (2)           & TODO & TODO & TODO \\
-    Partially relevant (1) & TODO & TODO & TODO \\
-    Non-relevant (0)       & TODO & TODO & TODO \\
+    \multicolumn{5}{l}{\textit{SPLADE (Part 2)}} \\
+    Relevant (2)           & 47 & 54 & 12 & 113 \\
+    Partially relevant (1) & 19 & 51 & 20 &  90 \\
+    Non-relevant (0)       &  9 & 20 & 18 &  47 \\
+    Relevant or partially  & 88\% & 84\% & 64\% & 81\% \\
+    \midrule
+    \multicolumn{5}{l}{\textit{BM25 (Part 1)}} \\
+    Relevant (2)           & 49 & 48 &  7 & 104 \\
+    Partially relevant (1) & 21 & 57 & 15 &  93 \\
+    Non-relevant (0)       &  5 & 20 & 28 &  53 \\
+    Relevant or partially  & 93\% & 84\% & 44\% & 79\% \\
     \bottomrule
   \end{tabular}
 \end{table}
