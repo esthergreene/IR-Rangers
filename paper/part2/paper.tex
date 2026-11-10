@@ -69,7 +69,7 @@ for paragraphs.
 
 This paper describes the second phase, in which we add two neural retrieval models 
 intended to bridge this vocabulary gap: a learned sparse model, SPLADE~\cite{formal2021splade}, 
-which represents text as weights over vobcablulary terms, including related terms the 
+which represents text as weights over vocablulary terms, including related terms the 
 text does not contain, and a dense bi-encoder~\cite{reimers2019sentence}, which 
 represents text as a single embedding vector. We evaluate each model both as released 
 and after fine-tuning on our Train queries, rank papers by their best-scoring 
@@ -101,9 +101,9 @@ over BM25 from 0.514 to 0.631; on paragraphs its advantage is smaller and not si
 The dense model outperforms BM25 on papers but not on paragraphs, and fine-tuning did 
 not significantly improve either neural model. Fusing all three models gives the best 
 results, with nDCG of 0.701 on papers and 0.550 on paragraphs, significantly above both 
-BM25 and SPLADE alone. Our analysis shows that the neural models retrieve paragraphs 
-that paraphrase the query, but still rank highly paragraphs that share the query's 
-vobcabulary in an unrelated field.
+BM25 and SPLADE alone. Our analysis shows that the neural models can retrieve paragraphs 
+that paraphrase a query without sharing its words, yet they still rank highly some paragraphs 
+that only share its vocabulary.
 
 \section{Methodology}
 \label{sec:method}
@@ -119,7 +119,7 @@ text (Section~\ref{sec:preprocessing}) and index paragraphs only. Both start fro
 publically released checkpoints, which we evaluate as released and after fine-tuning 
 on Train queries (Section~\ref{sec:training-data}). Because the neural indexes contain 
 only paragraphs, papers are ranked from their paragraphs' scores (Section~\ref{sec:maxp}). 
-Finally, runs from different models can be combined with reciprocal rank fusion 
+Finally, the runs from different models can be combined with reciprocal rank fusion 
 (Section~\ref{sec:rrf}). Section~\ref{sec:eval} describes our evaluation setup.
 
 \subsection{Preprocessing}
@@ -220,19 +220,19 @@ We fine-tune both neural models on Train queries only; Study and Test queries ar
 never used for training or model selection. The 2,000 Train queries are split 
 by query into 1,800 training and 200 validation queries, stratified by difficulty 
 so that both sets keep the 30/50/20 mix of easy, medium, and hard queries, and no 
-validation query appears in training. Every paragraph judged relevant or partially 
+validation query appears in training. Every paragraph that was judged relevant or partially 
 relevant serves as a positive, giving 5,138 positives for the training queries and 
 582 for the validation queries, about 2.9 per query.
 
 The Train judgments contain no non-relevant (grade 0) paragraphs, so negatives must 
-be mined. We use BM25 hard negatives: unjudged paragraphs that BM25 retrieves for the 
-query, which share vocabulary and topic with it and are therefore more informative 
-than random paragraphs. Because judgments are incomplete, an unjudged paragraph near 
+be mined. We use BM25 hard negatives: unjudged paragraphs that BM25 retrieves for the query. 
+They share vocabulary and topics with it and are therefore more informative than random paragraphs. 
+ Because judgments are incomplete, an unjudged paragraph near 
 the top of BM25's ranking is often relevant, so we skip BM25's top 20 results and 
 sample 30 negatives per query at random from ranks 21--100, with a fixed seed per query. 
 Random sampling gives each query a mix of close and easier negatives rather than only 
 the hardest ones. Each training example is a (query, positive, negative) triple, one 
-per positive, cycling through the query's negatives. Both models are trained with a 
+per positive, cycling through the query's negatives. Both neural models are trained with a 
 contrastive loss in which each query's positive must outscore its own hard negative 
 as well as the positives and negatives of the other queries in the batch (Sections~\ref{sec:splade} 
 and~\ref{sec:dense}).
@@ -304,7 +304,7 @@ and is not among our submitted Test runs.
 % REVISE query-set roles: Train for BM25 tuning and neural training/validation;
 %   Study for all results; Test for submitted runs and annotation.
 We evaluate each run's top 100 results with six metrics: nDCG, nDCG@5, MRR, 
-P@5, P@10, and Recall@100 , computed with ranx~\cite{bassani2022ranx}. For a 
+P@5, P@10, and Recall@100, computed with ranx~\cite{bassani2022ranx}. For a 
 ranking with relevance grades 
 $\mathit{rel}_i \in \{0, 1, 2\}$ at ranks $i = 1, 2, \dots$,
 \begin{equation}
@@ -324,21 +324,21 @@ ranks. Documents absent from the judgments count as non-relevant.
 
 nDCG uses the relevance grades directly as gains. For MRR, P@$k$, and Recall@100, 
 documents of grade 1 or 2 count as relevant. We also report strict MRR and P@5, in 
-which only grade-2 documents count; queries without a grade-2 document are excluded 
-from these, so they are averaged over 238 of the 250 Study queries.
+which only grade-2 documents count as relevant; these are averaged over the 238 Study 
+queries that have at least one grade-2 document.
 
 We test differences between runs with a two-sided paired Student's t-test over 
 queries at $p < 0.05$, using ranx, between every pair of runs in a table: BM25, 
 SPLADE, and the dense model; the zero-shot and fine-tuned version of each neural 
 model; and each fused run against BM25, SPLADE, and the other fused run. We do not 
 correct for multiple comparisons, so with many tests some individual significant 
-differences may be chance; we therefore emphasize differences that are consistent 
+differences may be by chance; we therefore emphasize differences that are consistent 
 across metrics and collections.
 
 The three query sets serve distinct purposes. Train queries are used for tuning 
-BM25 (Section~\ref{sec:bm25}) and for training the neural models and selecting their 
-checkpoints (Section~\ref{sec:training-data}). Study queries are used for all reported 
-results, and the Test queries, whose judgments are withheld, for our submitted runs 
+BM25 (Section~\ref{sec:bm25}) and for training the neural models as well as selecting their 
+checkpoints (Section~\ref{sec:training-data}). The Study queries are used for all reported 
+results, and the Test queries, whose judgments are withheld, are for our submitted runs 
 and manual annotation (Section~\ref{sec:annotation}).
 
 
@@ -475,10 +475,10 @@ and manual annotation (Section~\ref{sec:annotation}).
   \end{tabular}
 \end{table}
 Table~\ref{tab:difficulty} breaks nDCG@5 down by query difficulty. On papers, the 
-neural models improve most on easy and easy and medium queries: SPLADE raises 
-nDCG@5 over BM25 by 0.155 on easy and 0.133 on medium on medium queries, but by 
-only 0.023 on hard queries, where neither model differs significantly from 
-BM25 and only fusion does (0.276 vs.\ 0.187).
+neural models improve most on easy and medium queries: SPLADE raises 
+nDCG@5 over BM25 by 0.155 on easy and 0.133 on medium queries, but by 
+only 0.023 on hard queries, where neither model differs significantly. It is only 
+with fusion that we see a significant difference in nDCG (0.276 RRF vs.\ 0.187 BM25).
 
 On paragraphs, BM25 remains the best single model on easy queries (0.676), 
 significantly ahead of the dense model (0.559) and numerically ahead of SPLADE 
@@ -488,7 +488,7 @@ BM25, not significant), and fusion is significantly better than every single mod
 (0.547). On hard paragraph queries, all models score close to zero: 0.003 for BM25 
 and about 0.04 for the neural models. Both neural models are significantly better 
 than BM25 on nDCG, but none reliably places a judged relevant paragraph in its 
-top five. Incomplete judgments contribute to this: in Part~1, BM25's top-ranked 
+top five. Incomplete judgments may contribute to this: in Part~1, BM25's top-ranked 
 paragraph was unjudged for every hard Study query. Our Test annotations (Section~\ref{sec:annotation}) 
 give a fuller picture of how the models perform on hard queries.
 
@@ -589,28 +589,28 @@ changes: the neural models use a different matching model, and they also rank
 papers differently, by their best paragraph rather than by the paper's full text. 
 To separate the two, we also ranked papers with BM25 by MaxP, retrieving 2,000 
 paragraphs with the paragraph-tuned BM25 (Section~\ref{sec:bm25}) and keeping 
-each paper's best paragraph (Table~\ref{tab:maxp}). This alone raises BM25's 
-paper nDCG from 0.582 to 0.645, significantly on every metric except P@10 and 
-Recall@100, and BM25-MaxP is statistically indistinguishable from the dense 
-model on every metric. The dense model's advantage over BM25 on papers therefore 
+each paper's best paragraph (Table~\ref{tab:maxp}). This alone raises BM25's paper 
+nDCG from 0.582 to 0.645. In fact, it significantly increases on every metric except 
+P@10 and Recall@100. BM25-MaxP is statistically indistinguishable from the dense model 
+on every metric. The dense model's advantage over BM25 on papers therefore 
 comes from ranking papers by their best paragraph, not from dense matching, which 
 is consistent with its weaker paragraph results. SPLADE remains ahead of BM25-MaxP 
 (nDCG 0.671 vs.\ 0.645), but the difference is significant only for P@5; its advantage 
-is concentrated on medium queries (nDCG@5 0.704 vs.\ 0.642, significant). With the 
-paper-ranking method held fixed, SPLADE's improvement over BM25 is therefore modest 
+is concentrated on medium queries (nDCG@5 0.704 vs.\ 0.642, significant). With every 
+model utilizing the same paper ranking method, SPLADE's improvement over BM25 becomes modest 
 on both tasks, and the large gains in this phase come from MaxP and from fusion (Section~\ref{sec:fusion-results}).
 
 MaxP helps most on easy queries, where BM25-MaxP reaches nDCG@5 of 0.830, the 
 highest of any model. Many queries ask about a specific finding or method described 
 in a single passage, so a paper's best-matching paragraph is a better indicator 
 of relevance than its full text, in which a long paper can accumulate matches for 
-common query terms across many unrelated paragraphs, as with query 2112 in Part~1. 
+common query terms across many unrelated paragraphs, as seen with query 2112 in Part~1. 
 On hard queries the opposite holds: BM25-MaxP is the weakest model (0.141), and 
 full-paper BM25 is significantly better on nDCG (0.256 vs.\ 0.201). When a query 
 paraphrases its source passage, no single paragraph shares many terms with it, but 
 the paper as a whole may.
 
-Query 2011, which BM25 failed if Part~1, shows where neural matching does help: 
+Query 2011, which BM25 failed in Part~1, shows where neural matching does help: 
 \textit{``Why is it harder to identify specific heart rhythm abnormalities using 
 wrist-worn optical sensors than with electrical cardiac monitoring, and what 
 complicates this process in wearable devices?''} Its relevant paper describes this 
