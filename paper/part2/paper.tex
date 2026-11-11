@@ -39,6 +39,21 @@
 % - fine-tuning on Train gave no significant gain for either neural model
 % - RRF of all three is significantly best: paper nDCG@5 0.655 (+27%), paragraph 0.489 (+18%)
 % - analysis: neural models bridge paraphrase but still fall for shared vocabulary across fields
+This paper contains our study of retrieving arXiv papers and paragraphs for natural-language 
+research questions, comparing our tuned BM25 baseline with two neural first-stage 
+retrievers: SPLADE, a learned sparse model, and a MiniLM dense bi-encoder. Both are 
+fine-tuned on 1,800 training queries with BM25 hard negatives, index 2.28 million 
+paragraphs, and rank papers by their best paragraph (MaxP). On 250 Study queries, 
+SPLADE is the best single model, raising paper nDCG@5 from 0.514 to 0.631, but on 
+paragraphs its gain over BM25 (0.434 vs.\ 0.416) is not significant, and the dense 
+model falls below BM25. An ablation shows that much of the neural gain on papers 
+comes from MaxP itself: BM25 ranked by its best paragraph reachs 0.598, statistically 
+indistinguishable from the dense model. Fine-tuning improved validation scores but 
+gave no significant Study gain for either model. Reciprocal rank fusion of all three 
+models is the most effective system, with nDCG@5 of 0.655 on papers and 0.489 on 
+paragraphs. Our analysis shows that the neural models retrieve paraphrased passages 
+that BM25 misses, especially for hard queries, but still fail on shared terms used 
+in another sense and on queries whose meaning lies in mathematical notation.
 \end{abstract}
 
 \keywords{information retrieval, BM25, SPLADE, dense retrieval,
@@ -526,7 +541,7 @@ give a fuller picture of how the models perform on hard queries.
 \subsection{Efficiency}
 \label{sec:efficiency}
 \begin{table}[t]
-  \caption{Index size, indexing time, startup time and average query
+  \caption{On-disk index size, indexing time, startup time and average query
     latency on the 250 Study queries (papers / paragraphs). All times
     were measured on one shared server with an Intel Core i7-11700 CPU
     (2.50~GHz), 31~GiB of RAM and an NVIDIA RTX A5000 GPU (24~GB);
@@ -548,6 +563,30 @@ give a fuller picture of how the models perform on hard queries.
 \end{table}
 % TODO: also training time per model; note neural paper retrieval costs a
 %   2,000-paragraph search + MaxP.
+BM25 is by far the cheapest model (Table~\ref{tab:efficiency}): it builds its 
+paragraph index in under three minutes on the CPU and answers a paragraph query 
+in 62\,ms, against 230\,ms for the dense model and 491\,ms for SPLADE. Neural 
+paper retrieval costs about as much as paragraph retrieval, since it is a 
+2,000-paragraph search followed by MaxP (Section~\ref{sec:maxp}). For the dense 
+model the two latencies are identical, because exact search compares the query 
+with all 2.28 million paragraph vectors whatever the depth; this brute-foce CPU 
+search, not query encoding, accounts for most of its latency, and an approximate 
+or GPU index would reduce it. SPLADE is the slowest model even though it searches 
+only the columns of its query terms: fine-tuned queries activate about 200 terms, 
+many of them common expansion terms whose columns cover a large share of the 
+collection, and our implementation uses no pruning. Its weaker sparsity after 
+fine-tuning (Section~\ref{sec:training}) adds to this cost.
+
+The neural indexes are also three to four times larger than BM25's paragraph index. 
+The dense index stores 384 floats per paragraph (3.3\,GB), and the SPLADE index holds 
+812 million nonzero weights, about 357 per paragraph, which take 2.8\,GB compressed 
+on disk and about 6.5\,GB in memory. Encoding the collection on the GPU took 31.8 
+minutes for MiniLM and 63.4 minutes for SPLADE, whose BERT-base encoder is larger 
+and scores the full vocabulary at every token position. Startup is longer for neural 
+paper runs than for paragraph runs because they also load the paragraph-to-paper map. 
+Fusing all three models would cost the sum of their latencies, about 0.8\,s per query 
+if run one after another. Finally, all times come from single runs on a shared server 
+and should be read as approximate.
 
 %======================================================================
 \section{Results Analysis}
@@ -648,6 +687,27 @@ in Table~\ref{tab:difficulty} hide individual successes of this kind.
 %   shared; order flows = demand management, utility = gains, clients =
 %   customer types. TODO: optionally show SPLADE's top expansion terms for the
 %   query to show *how* it bridged the gap.
+In order to properly understand where neural models succeed compared to the BM25 
+baseline, we investigate some example queries from the collection. Test query 
+2500 shows how SPLADE bridges vocabulary mismatch: \textit{``What factors 
+regarding the heterogeneity of clients influence the utility of regulating 
+order flows in logistics services?''} SPLADE ranks first a paragraph we judged 
+fully relevant: \textit{``Insight 4: The potential gains of demand management 
+increase with the level of heterogeneity between the customer types\ldots''} The 
+paragraph shares only one word with the query, \textit{heterogeneity}; it says 
+\textit{demand management} for regulating order flows, \textit{gains} for utility, 
+and \textit{customer types} for clients. BM25 does not rank it in its top 100, 
+since a paragraph matching a single query term is outranked by many that match 
+several, and the dense model ranks it only 22nd. SPLADE combines an exact match 
+on the rare term \textit{heterogeneity} with weight on related terms for the rest 
+of the query, which neither exact term matching nor a single dense vector manages 
+here.
+
+The same pattern holds across our Test annotations: on hard queries, which paraphrase 
+their source passage most, SPLADE's top paragraph is relevant for 32 of 50 queries 
+against 22 for BM25 (Table~\ref{tab:annotation}). Query 2011 (Section~\ref{sec:vs-bm25}) 
+gives a Study example in which both neural models retrieve paragraphs that BM25 
+misses entirely.
 
 \subsection{Failure Cases}
 \label{sec:failures}
@@ -659,6 +719,45 @@ in Table~\ref{tab:difficulty} hide individual successes of this kind.
 %   seen repeatedly during annotation.
 % TODO: incomplete judgments again -- how often were top neural results
 %   unjudged in Study?
+SPLADE's top paragraph was judged non-relevant for 47 of the 250 Test queries 
+(Section~\ref{sec:annotation}). Four patterns account for most of them.
+
+\paragraph{Shared terms in another sense.} Like BM25 in Part~1, SPLADE still ranks 
+paragraphs that share a distinctive query term used in a different sense. Query 2433 
+(\textit{``What is the purpose of utilizing a decay parameter for epsilon during a 
+search procedure?''}) asks about decaying the exploration rate, but SPLADE's top 
+paragraph is from a particle-physics paper about the decay channels of long-lived 
+particles. Query 2391 asks for a technique that combines penalized regression with 
+resampling to select variables, and SPLADE returns a paragraph on the resampling 
+step of particle filters. Expansion does not resolve such ambiguity, since it adds 
+terms related to the word rather than to the query's intended sense.
+
+\paragraph{Topical drift.} Expansion can also cause errors that pure term matching 
+cannot. For query 2264, about \textit{``abrupt climatic shifts and solar-driven 
+occurrences''}, SPLADE's top paragraph shares no content word with the query: it comes 
+from an autonomous-driving paper about robustness to adverse weather, a related topic 
+but not the query's subject.
+
+\paragraph{Lost notation.} Because our cleaning removes \LaTeX{} math from queries as 
+well as paragraphs, queries about specific mathematical objects lose their most 
+specific terms. Query 2400 (\textit{``How is the function $\Omega_{4}^{(4)}$ 
+expressed in terms of $\omega$ for the variables $\lambda_{1}, \ldots, \lambda_{4}$?''}) 
+is reduced to generic words such as \textit{function}, \textit{expressed}, and 
+\textit{variables}. SPLADE's top paragraph is non-relevant for 8 of the 16 Test 
+queries that contain \LaTeX{}, against 39 of the 234 that do not (50\% vs.\ 17\%), 
+although the former sample is small. Keeping math in a normalized form, or encoding 
+it separately, is a clear direction for future work.
+
+\paragraph{Incomplete judgments.} Some apparent failures are not failures. About 
+89\% of each model's top 10 Study paragraphs are unjudged (88.4\% for SPLADE, 89.3\% 
+for BM25, 89.6\% for the dense model), and since the Study qrels list almost only 
+relevant paragraphs, every unjudged paragraph counts as non-relevant. Because the 
+rate is nearly the same for all three models, this lowers absolute scores without 
+favoring any model. Our Test annotations suggest the effect is large: SPLADE's top 
+paragraph was at least partially relevant for 81\% of Test queries in our judgment, 
+whereas its Study MRR of 0.539 means its first-ranked paragraph is judged relevant 
+for at most 54\% of Study queries. The query sets and annotators differ, so the 
+comparison is only indicative, but our Study scores are best read as lower bounds.
 
 \subsection{Why Fine-Tuning Gave Little}
 \label{sec:why-finetune}
@@ -696,6 +795,24 @@ in Table~\ref{tab:difficulty} hide individual successes of this kind.
 %   cross-encoder; a cross-encoder reranker on the fused top 100; better
 %   math/equation handling in extraction; learned fusion weights or a tuned k;
 %   larger or domain-adapted (scientific) encoders.
+We extended our BM25 system with learned sparse and dense retrieval over arXiv 
+paragraphs. SPLADE was the most effective single model, and both neural models 
+significantly outperformed BM25 on paper retrieval, but an ablation showed that 
+ranking papers by their best paragraph accounts for much of that gain; on paragraphs, 
+neural matching alone improved little over a well-tuned BM25. Fine-tuning on our 
+training queries improved validation effectiveness but did not carry over to the 
+full collection, and it reduced SPLADE's sparsity, increasing its index size and 
+query latency. Because the three models fail on different queries, fusing them 
+with RRF gave the best results on both tasks, at the cost of running all three 
+retrievers.
+
+Several directions follow from our analysis. Mining hard negatives from the models' 
+own rankings over the full collection, or distilling from a cross-encoder, would 
+train the models on their actual errors rather than BM25's. A cross-encoder could 
+rerank the fused top 100. Preserving mathematical notation in a normalized form 
+would help the queries that our cleaning currently strips of their most specific 
+terms. Finally, tuning the fusion constant or learning fusion weights, and trying 
+encoders pretrained on scientific text, may improve effectiveness further.
 
 \bibliographystyle{ACM-Reference-Format}
 \bibliography{references}
