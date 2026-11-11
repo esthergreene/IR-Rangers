@@ -32,13 +32,6 @@
 \email{nathaniel.serrano@maine.edu}
 
 \begin{abstract}
-% TODO rewrite once results are final. Points to hit:
-% - continuation of Part 1: BM25 baseline vs. learned sparse (SPLADE) and dense (MiniLM) retrieval
-% - SPLADE best single model: paper nDCG@5 0.631 vs 0.514 for BM25 (+23%)
-% - Dense beats BM25 on papers but not on paragraphs
-% - fine-tuning on Train gave no significant gain for either neural model
-% - RRF of all three is significantly best: paper nDCG@5 0.655 (+27%), paragraph 0.489 (+18%)
-% - analysis: neural models bridge paraphrase but still fall for shared vocabulary across fields
 This paper contains our study of retrieving arXiv papers and paragraphs for natural-language 
 research questions, comparing our tuned BM25 baseline with two neural first-stage 
 retrievers: SPLADE, a learned sparse model, and a MiniLM dense bi-encoder. Both are 
@@ -61,16 +54,7 @@ rank fusion, scientific document retrieval, passage retrieval}
 
 \maketitle
 
-%======================================================================
 \section{Introduction}
-% TODO para 1: Part 1 recap in 2-3 sentences: BM25 beat TF-IDF, but
-%   failed on hard queries that paraphrase terminology (vocabulary mismatch).
-%   That motivates Part 2.
-% TODO para 2: copy the collection description from Part 1 (34,308 papers,
-%   2,275,574 paragraphs, noisy extraction) -- reuse as is.
-% TODO para 3: copy the tasks / query sets / grading-scale paragraph from Part 1.
-% TODO para 4: what's new: SPLADE and a dense bi-encoder, each zero-shot and
-%   fine-tuned on Train; MaxP for papers; RRF fusion. Headline results.
 The volume of scientific literature makes finding relevant work increasingly 
 difficult, both at the level of whole papers and of the specific passages 
 that answer a question. In the first phase of this project, we built a retrieval 
@@ -122,9 +106,6 @@ that only share its vocabulary.
 
 \section{Methodology}
 \label{sec:method}
-% TODO overview paragraph: one pipeline, three first-stage retrievers
-%   (BM25, SPLADE, dense), paragraph-level neural indexes, papers via MaxP,
-%   optional RRF fusion.
 Our system retrieves with three first-stage models that share the query 
 sets, run format, and evaluation pipeline. BM25 (Section~\ref{sec:bm25}) 
 searches inverted indexes over separately preprocessed paper and paragraph 
@@ -139,12 +120,6 @@ Finally, the runs from different models can be combined with reciprocal rank fus
 
 \subsection{Preprocessing}
 \label{sec:preprocessing}
-% TODO condensed Part 1 text for BM25 (math removal, Snowball stemming, etc.)
-%   + the collection-statistics table (tab:cleaning) if space allows.
-% TODO neural input (config/preprocessing_neural.yaml): only cleaning --
-%   inline math, URLs and citation markers removed; no stemming or stopword
-%   removal, since the models use their own WordPiece tokenizers.
-%   Mention the max input length / truncation if relevant.
 BM25 and the neural models receive differently preprocessed text, because they 
 match text in different ways.
 
@@ -161,11 +136,6 @@ Both encoders trucate their input at 256 WordPiece tokens.
 
 \subsection{BM25 Baseline}
 \label{sec:bm25}
-% KEEP from Part 1: scoring function (equation), vectorized implementation,
-%   and tuning on Train (k1 = 4.0, b = 0.75 for papers; paragraph values).
-%   Cut TF-IDF entirely. The held-out tuning table can become one sentence.
-% Reuse the Part 1 heatmap figure (bm25_tuning_paper_full.pdf,
-%   bm25_tuning_paragraph_full.pdf) -- found via \graphicspath.
 Our baseline is the BM25 model from Part~1, unchanged. It scores a document 
 $d$ for a query $q$ as 
 \begin{equation}
@@ -221,16 +191,6 @@ term occurs at all matters more.
 
 \subsection{Training Data}
 \label{sec:training-data}
-% TODO (scripts/build_training_data.py; confirm the flags actually used):
-% - only Train queries; split into train / validation by query (val fraction 0.1)
-% - positives: judged paragraphs with grade >= 1 (confirm 1 vs 2)
-% - hard negatives: judged-0 paragraphs, then paragraphs sampled from BM25's
-%   ranking after skipping the top 20 (to avoid unjudged relevant ones);
-%   30 per query, seeded
-% - one (query, positive, negative) triple per judged positive, cycling negatives
-% - leakage check: validation queries are disjoint from training queries; an
-%   earlier version with 160 of 200 validation queries also in training gave an
-%   inflated +9.65% that disappeared once fixed (1-2 sentences)
 We fine-tune both neural models on Train queries only; Study and Test queries are 
 never used for training or model selection. The 2,000 Train queries are split 
 by query into 1,800 training and 200 validation queries, stratified by difficulty 
@@ -311,13 +271,6 @@ and is not among our submitted Test runs.
 
 \subsection{Evaluation Setup}
 \label{sec:eval}
-% KEEP Part 1 text: nDCG equation, MRR, P@k, lenient vs strict, 238 queries
-%   for strict, two-sided paired t-test p < 0.05 with ranx.
-% ADD: Recall@100.
-% REVISE the comparison list: all pairs of BM25 / Dense / SPLADE;
-%   zero-shot vs fine-tuned for each neural model; RRF vs its components.
-% REVISE query-set roles: Train for BM25 tuning and neural training/validation;
-%   Study for all results; Test for submitted runs and annotation.
 We evaluate each run's top 100 results with six metrics: nDCG, nDCG@5, MRR, 
 P@5, P@10, and Recall@100, computed with ranx~\cite{bassani2022ranx}. For a 
 ranking with relevance grades 
@@ -561,8 +514,6 @@ give a fuller picture of how the models perform on hard queries.
     \bottomrule
   \end{tabular}
 \end{table}
-% TODO: also training time per model; note neural paper retrieval costs a
-%   2,000-paragraph search + MaxP.
 BM25 is by far the cheapest model (Table~\ref{tab:efficiency}): it builds its 
 paragraph index in under three minutes on the CPU and answers a paragraph query 
 in 62\,ms, against 230\,ms for the dense model and 491\,ms for SPLADE. Neural 
@@ -588,7 +539,6 @@ Fusing all three models would cost the sum of their latencies, about 0.8\,s per 
 if run one after another. Finally, all times come from single runs on a shared server 
 and should be read as approximate.
 
-%======================================================================
 \section{Results Analysis}
 \label{sec:analysis}
 
@@ -604,11 +554,6 @@ and should be read as approximate.
 
 \subsection{Comparison with the BM25 Baseline}
 \label{sec:vs-bm25}
-% TODO: revisit Part 1 query 2011 (heart rhythm / wrist-worn optical sensors
-%   vs arrhythmias / PPG / ECG / smartwatch). BM25 had none of the paper's
-%   judged paragraphs in its top 100. Report Dense and SPLADE ranks (awk check
-%   on the Study paragraph runs, like query 2500).
-% TODO: per-query win/loss counts vs BM25 (how many queries each model helps/hurts).
 \begin{table}[t]
   \caption{Paper retrieval on Study queries when BM25 also ranks papers
     by their best paragraph (BM25-MaxP), as the neural models do. The
@@ -678,15 +623,6 @@ in Table~\ref{tab:difficulty} hide individual successes of this kind.
 
 \subsection{Successful Retrieval Cases}
 \label{sec:successes}
-% Test query 2500: ``What factors regarding the heterogeneity of clients
-%   influence the utility of regulating order flows in logistics services?''
-% Paragraph 2409.05061_153 (graded 2): ``Insight 4: The potential gains of
-%   demand management increase with the level of heterogeneity between the
-%   customer types ...''
-% Ranks: SPLADE 1, Dense 22, BM25 not in top 100. Only ``heterogeneity'' is
-%   shared; order flows = demand management, utility = gains, clients =
-%   customer types. TODO: optionally show SPLADE's top expansion terms for the
-%   query to show *how* it bridged the gap.
 In order to properly understand where neural models succeed compared to the BM25 
 baseline, we investigate some example queries from the collection. Test query 
 2500 shows how SPLADE bridges vocabulary mismatch: \textit{``What factors 
@@ -711,14 +647,6 @@ misses entirely.
 
 \subsection{Failure Cases}
 \label{sec:failures}
-% TODO pick one SPLADE top-1 graded 0 that matches on vocabulary only, e.g.
-%   ``resampling'' (stability selection vs particle filters) or ``weather''
-%   (climate vs image restoration). Same shared-word-different-field error as
-%   BM25 in Part 1 (``epsilon'', ``independent'', ``influence'').
-% TODO second failure type: answers lost in dropped equations (math removal),
-%   seen repeatedly during annotation.
-% TODO: incomplete judgments again -- how often were top neural results
-%   unjudged in Study?
 SPLADE's top paragraph was judged non-relevant for 47 of the 250 Test queries 
 (Section~\ref{sec:annotation}). Four patterns account for most of them.
 
@@ -789,12 +717,6 @@ comparison is only indicative, but our Study scores are best read as lower bound
 
 %======================================================================
 \section{Conclusion}
-% TODO: summary of findings (SPLADE best single model, neural > BM25 mainly
-%   on papers, fine-tuning not significant, RRF significantly best).
-% Future work: model-mined (self) hard negatives or distillation from a
-%   cross-encoder; a cross-encoder reranker on the fused top 100; better
-%   math/equation handling in extraction; learned fusion weights or a tuned k;
-%   larger or domain-adapted (scientific) encoders.
 We extended our BM25 system with learned sparse and dense retrieval over arXiv 
 paragraphs. SPLADE was the most effective single model, and both neural models 
 significantly outperformed BM25 on paper retrieval, but an ablation showed that 
