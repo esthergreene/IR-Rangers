@@ -277,20 +277,20 @@ For dense retrieval, we used the pretrained
 \texttt{all-MiniLM-L6-v2} Sentence-BERT bi-encoder
 \cite{wang2020minilm,reimers2019sentence}. The model
 encodes queries and paragraphs into 384-dimensional
-dense embeddings. This lets us have retrieval based on semantic
-similarity rather than exact term overlap. Embeddings
-were normalized so that inner-product similarity is
-equivalent to cosine similarity.
+dense embeddings. This approach retrieves documents based 
+on semantic similarity rather than exact term overlap. 
+Embeddings were normalized so that inner-product similarity 
+is equivalent to cosine similarity.
 
-We fine-tuned the model using 5,138 query-positive
+The model was fine-tuned using 5,138 query-positive
 paragraph pairs with MultipleNegativesRankingLoss,
 which treats other positive passages within a batch
 as in-batch negatives. Training used a batch size of 
 16, a learning rate of $2 \times 10^{-5}$, and five
 epochs. We then performed validation after each epoch,
 and the checkpoint with the highest validation nDCG@10
-was selected. The best checkpoint was obtained after
-the second epoch. 
+score was selected. This checkpoint was from the
+second epoch.
 
 We indexed 2,275,547 paragraph embeddings using
 FAISS \cite{johnson2019billion}. Specifically, we
