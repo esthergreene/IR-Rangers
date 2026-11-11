@@ -40,7 +40,7 @@ paragraphs, and rank papers by their best paragraph (MaxP). On 250 Study queries
 SPLADE is the best single model, raising paper nDCG@5 from 0.514 to 0.631, but on 
 paragraphs its gain over BM25 (0.434 vs.\ 0.416) is not significant, and the dense 
 model falls below BM25. An ablation shows that much of the neural gain on papers 
-comes from MaxP itself: BM25 ranked by its best paragraph reachs 0.598, statistically 
+comes from MaxP itself: BM25 ranked by its best paragraph reaches 0.598, statistically 
 indistinguishable from the dense model. Fine-tuning improved validation scores but 
 gave no significant Study gain for either model. Reciprocal rank fusion of all three 
 models is the most effective system, with nDCG@5 of 0.655 on papers and 0.489 on 
@@ -68,7 +68,7 @@ for paragraphs.
 
 This paper describes the second phase, in which we add two neural retrieval models 
 intended to bridge this vocabulary gap: a learned sparse model, SPLADE~\cite{formal2021splade}, 
-which represents text as weights over vocablulary terms, including related terms the 
+which represents text as weights over vocabulary terms, including related terms the 
 text does not contain, and a dense bi-encoder~\cite{reimers2019sentence}, which 
 represents text as a single embedding vector. We evaluate each model both as released 
 and after fine-tuning on our Train queries, rank papers by their best-scoring 
@@ -89,7 +89,7 @@ papers identified by their arXiv ID, and \emph{paragraph retrieval}, which retur
 individual paragraphs. For each query, systems return their top 100 results. Three 
 query sets are provided: Train (2,000 queries), Study (250 queries with relevance 
 judgements, which we use for all analysis in this paper), and Test (250 queries 
-whose judgments are withheld). Each set contains 30\% easy, 50\% medium, and 25\% 
+whose judgments are withheld). Each set contains 30\% easy, 50\% medium, and 20\% 
 hard queries. Relevance is graded on a three-point scale: a document that fully 
 addresses the query is relevant (2), one that provides useful information without 
 fully addressing it is partially relevant (1), and any document not in the judgments 
@@ -112,7 +112,7 @@ searches inverted indexes over separately preprocessed paper and paragraph
 collections, as in Part~1. The two neural models, SPLADE (Section~\ref{sec:splade}) 
 and a dense bi-encoder (Section~\ref{sec:dense}), receive more lightly preprocessed 
 text (Section~\ref{sec:preprocessing}) and index paragraphs only. Both start from 
-publically released checkpoints, which we evaluate as released and after fine-tuning 
+publicly released checkpoints, which we evaluate as released and after fine-tuning 
 on Train queries (Section~\ref{sec:training-data}). Because the neural indexes contain 
 only paragraphs, papers are ranked from their paragraphs' scores (Section~\ref{sec:maxp}). 
 Finally, the runs from different models can be combined with reciprocal rank fusion 
@@ -220,32 +220,116 @@ on this sample are used only to compare checkpoints, not to report effectiveness
 
 \subsection{Learned Sparse Retrieval}
 \label{sec:splade}
-% TODO: SPLADE \cite{formal2021splade}: MLM head -> log-saturated ReLU,
-%   max-pooled weights over the vocabulary; query and document are sparse
-%   vectors, scored by dot product. Start from naver/splade-cocondenser-selfdistil
-%   \cite{formal2022distillation}, which is also the zero-shot model.
-% TODO fine-tuning: SparseMultipleNegativesRankingLoss (in-batch + hard negative)
-%   + FLOPS regularization \cite{paria2020minimizing}; batch 32, lr 1e-5,
-%   up to 3 epochs, eval every 50 steps, early stopping (patience 3) on
-%   validation nDCG@10. Confirm run2's actual values.
-% TODO index: paragraph vectors stored as a sparse matrix (.npz), searched
-%   by sparse matrix-vector product.
+This section describes how SPLADE represents text, how we fine-tune it, and how 
+we index and search the paragraph collection with it.
+
+\subsubsection{Architecture and Representation}
+For learned sparse retrieval we use SPLADE \cite{formal2021splade}, initialized from
+the publicly released checkpoint \texttt{naver/\allowbreak splade-\allowbreak cocondenser-\allowbreak selfdistil}~\cite{formal2022distillation},
+which also serves as our zero-shot baseline. SPLADE maps a text (query or paragraph) to a
+sparse vector $\mathbf{w} \in \mathbb{R}^{|V|}$ over the BERT WordPiece vocabulary
+($|V| = 30{,}522$). For each input position $t$, the Masked Language Modeling (MLM) head
+produces a logit $h_{t,j}$ for every vocabulary term $j$; these are passed through a
+log-saturated ReLU and max-pooled over positions (padding masked out):
+\begin{equation}
+    w_j = \max_{t} \log \left( 1 + \mathrm{ReLU}(h_{t,j}) \right)
+\end{equation}
+The ReLU zeroes out most terms, max-pooling keeps each term's strongest contribution
+anywhere in the text, and the logarithm damps very large weights so that no single term
+dominates a score. Because the MLM head scores the whole vocabulary, a text can receive
+weight on terms it does not contain, which lets SPLADE expand queries and documents with
+related terms while still matching exact terms. Inputs are truncated at 256 tokens.
+
+
+\subsubsection{Model Fine-Tuning}
+We fine-tune the base model on the training triples described in
+Section~\ref{sec:training-data} with \texttt{SpladeLoss}, which combines
+\texttt{SparseMultipleNegativesRankingLoss} with FLOPS regularization
+\cite{paria2020minimizing}. The ranking loss is a softmax cross-entropy in which each
+query's positive paragraph must outscore its BM25 hard negative and all other paragraphs
+in the batch. A no-duplicates batch sampler keeps a query from appearing twice in one
+batch, so its other positives are never treated as negatives. FLOPS regularization
+penalizes the sum over the vocabulary of each term's squared mean weight across the batch,
+which discourages terms that are active in many texts and so keeps posting lists short;
+we weight it $5 \times 10^{-5}$ for queries and $3 \times 10^{-5}$ for documents.
+
+
+Fine-tuning settings:
+\begin{itemize}
+    \item \textbf{Batch size:} 32 (mixed precision, fp16)
+    \item \textbf{Learning rate:} $1 \times 10^{-5}$
+    \item \textbf{Training horizon:} up to 3 epochs
+    \item \textbf{Validation and early stopping:} validation nDCG@10 every 50 steps; training
+          stops after 3 evaluations without improvement, and the best checkpoint is kept.
+\end{itemize}
+The best checkpoint (step 300, epoch 1.86) raised validation nDCG@10 from 0.566 to 0.644.
+
+
+\subsubsection{Indexing and Retrieval}
+\paragraph{Index construction.}
+Cleaned paragraphs are encoded on the GPU in batches.
+Each batch's activations are copied to host memory in a single transfer and stored as a
+small CSR matrix. The batches are then stacked into one paragraph--vocabulary
+matrix and converted to Compressed Sparse Column (CSC) format, so that each vocabulary
+term's column, holding the paragraphs that contain it and their weights, is contiguous, as
+in an inverted index. The matrix is saved as a compressed \texttt{.npz} file, together
+with the paragraph IDs in row order and the encoder settings. Retrieval loads this saved
+index; it is rebuilt only on request.
+
+
+\paragraph{Search.}
+Queries are encoded by the same pipeline into $\mathbf{q} \in \mathbb{R}^{|V|}$, and a
+paragraph's score is the sparse dot product
+\begin{equation}
+    S(q, d) = \langle \mathbf{q}, \mathbf{d} \rangle = \sum_{j \in V} q_j \, d_j
+\end{equation}
+Only the columns of the query's active terms are read, which works like term-at-a-time
+scoring over an inverted index. The top $k$ paragraphs are returned with their scores;
+paragraphs that share no active term with the query score zero and are left out.
+
 
 \subsection{Dense Retrieval}
 \label{sec:dense}
-% TODO: bi-encoder all-MiniLM-L6-v2 \cite{wang2020minilm, reimers2019sentence},
-%   384-dim mean-pooled embeddings, cosine / inner product.
-% TODO fine-tuning: MultipleNegativesRankingLoss, batch 32, lr 2e-5, up to 5 epochs,
-%   same early stopping. Confirm run1's actual values.
-% TODO index: exact inner-product FAISS index \cite{johnson2019billion} (confirm
-%   flat vs. approximate) over all 2.28M paragraphs.
+For dense retrieval, we used the pretrained \texttt{all-MiniLM-L6-v2}
+Sentence-BERT bi-encoder \cite{wang2020minilm,reimers2019sentence}. The model
+encodes queries and paragraphs into 384-dimensional dense embeddings, so it
+retrieves documents based on semantic similarity rather than exact term
+overlap. Embeddings are normalized, so inner-product similarity is equivalent
+to cosine similarity.
+
+The model was fine-tuned on the 5,138 training triples
+(Section~\ref{sec:training-data}) with MultipleNegativesRankingLoss, in
+which each query's positive paragraph must outscore its BM25 hard negative
+and every other paragraph in the batch. Training used a batch size of 32,
+a learning rate of $2 \times 10^{-5}$, and up to five epochs; validation
+nDCG@10 was computed every 50 steps, training stopped after three
+evaluations without improvement, and the best checkpoint (step 250,
+epoch 1.55) was kept.
+
+We indexed 2,275,547 paragraph embeddings with FAISS \cite{johnson2019billion}
+using \texttt{IndexFlatIP}, which performs exact inner-product search. Each
+query is encoded with the same bi-encoder, and the index returns the
+highest-scoring paragraphs.
 
 \subsection{Paper Ranking}
 \label{sec:maxp}
-% TODO: neural models index paragraphs only. Each paper is scored by its
-%   best paragraph (MaxP, \cite{dai2019deeper}) among the top 2,000 retrieved
-%   paragraphs; keep the top 100 papers. BM25 papers still use the Part 1
-%   paper index. Note why 2,000 (enough to fill 100 distinct papers).
+Our neural models index paragraphs only, so paper rankings are built from
+paragraph rankings with MaxP \cite{dai2019deeper}: each paper is scored by
+its best-scoring retrieved paragraph,
+\begin{equation}
+    \text{score}(p) = \max_{d \in p \,\cap\, R_q} s(q, d),
+\end{equation}
+where $s(q,d)$ is the model's score for paragraph $d$ and $R_q$ is the set
+of paragraphs retrieved for query $q$. We retrieve the top 2,000 paragraphs,
+map each to its paper, and walk down the list keeping the first occurrence
+of each paper; since the list is sorted by score, a paper's first occurrence
+is its best paragraph. We stop at 100 distinct papers. Retrieval goes far
+deeper than 100 because one paper often has several paragraphs near the top
+of the ranking; at a depth of 2,000, every Study query yielded 100 distinct
+papers. Papers with no paragraph in the top 2,000 are not ranked.
+The BM25 baseline keeps its own full-paper index; in
+Section~\ref{sec:vs-bm25} we also rank papers with BM25 by MaxP to separate
+the effect of MaxP from that of neural matching.
 
 \subsection{Rank Fusion}
 \label{sec:rrf}
@@ -312,6 +396,10 @@ and manual annotation (Section~\ref{sec:annotation}).
 
 \section{Evaluation Results}
 \label{sec:results}
+This section reports how the neural models trained (Section~\ref{sec:training}), 
+their effectiveness on the Study queries, including the effects of fine-tuning, 
+rank fusion, and query difficulty (Sections~\ref{sec:effectiveness}--\ref{sec:difficulty}), 
+and each model's cost (Section~\ref{sec:efficiency}).
 
 \subsection{Training}
 \label{sec:training}
@@ -325,12 +413,17 @@ and manual annotation (Section~\ref{sec:annotation}).
     \includegraphics[width=\linewidth]{training_dense_run1.png}
     \caption{Dense (MiniLM).}
   \end{subfigure}
-  \caption{Training and validation loss. % TODO: mark the selected checkpoint
+  \caption{Training and validation loss and validation nDCG@10 for each model; 
+  the dashed line marks the selected (best) checkpoint.
   }
   \label{fig:training}
 \end{figure}
-% TODO describe curves: when val loss flattens, where early stopping picked
-%   the best checkpoint, any overfitting gap.
+
+Figure~\ref{fig:training} shows the training curves. For SPLADE,
+validation loss fell sharply in the first third of an epoch and reached
+its minimum at step 300 (epoch 1.86), where validation nDCG@10 also
+peaked at 0.644, up from 0.566 for the zero-shot model; early stopping
+ended training at about epoch 2.8.
 
 \subsection{Effectiveness}
 \label{sec:effectiveness}
@@ -358,9 +451,20 @@ and manual annotation (Section~\ref{sec:annotation}).
     \bottomrule
   \end{tabular}
 \end{table*}
-% TODO text: SPLADE best everywhere; on papers both neural > BM25; on
-%   paragraphs SPLADE vs BM25 not significant (except R@100), and Dense is
-%   below BM25 (not significant). Part 1 baseline vs Part 2 comparison lives here.
+
+Table~\ref{tab:main} compares the three models. SPLADE is the most
+effective single model on both tasks. On papers, both neural models
+significantly outperform BM25 on nDCG, nDCG@5, MRR, P@5, and both strict
+metrics, with SPLADE raising nDCG@5 from 0.514 to 0.631, and SPLADE is
+also significantly better than Dense on nDCG@5, P@5, and P@10. On
+paragraphs the gains are much smaller: SPLADE scores higher than BM25 on
+every metric, but significantly only on Recall@100 (0.630 vs.\ 0.592) and
+strict P@5, while Dense falls slightly below BM25 on nDCG (0.447 vs.\
+0.474), with no significant difference between the two. SPLADE is
+significantly better than Dense on every paragraph metric except P@5 and
+Recall@100. Section~\ref{sec:neural-compare} discusses why the neural
+models gain more on papers than on paragraphs, and
+Section~\ref{sec:vs-bm25} separates the effect of MaxP.
 
 \subsection{Effect of Fine-Tuning}
 \label{sec:finetune}
@@ -384,8 +488,27 @@ and manual annotation (Section~\ref{sec:annotation}).
     \bottomrule
   \end{tabular}
 \end{table*}
-% TODO text: no significant gain from fine-tuning for either model;
-%   zero-shot Dense is significantly better on paper P@5 and P@10. Explanation in §4.5.
+
+As shown in Table~\ref{tab:finetune}, fine-tuning
+did not lead to significant improvements for either
+neural model. For Dense retrieval, paper-level nDCG
+increased from 0.635 to 0.640, while paragraph-level
+nDCG decreased from 0.458 to 0.447. The zero-shot 
+Dense model also performed significantly better on
+paper-level P@5 (0.166 vs.\ 0.156), and P@10 
+(0.090 vs.\ 0.084; $p< 0.05$). This suggests that
+fine-tuning did not consistently improve Dense
+retrieval on our Study queries. Although paper-level
+nDCG increased slightly, paragraph-level nDCG and
+paper-level P@5 and P@10 decreased. 
+
+SPLADE showed small improvements after fine-tuning,
+with paragraph-level nDCG increasing from 0.485 to
+0.494. None of these differences were statistically 
+significant. Overall, 
+our results suggest that fine-tuning did not provide 
+a clear advantage over the pretrained models on the 
+Study query set.
 
 \subsection{Rank Fusion}
 \label{sec:fusion-results}
@@ -415,9 +538,18 @@ and manual annotation (Section~\ref{sec:annotation}).
     \bottomrule
   \end{tabular}
 \end{table*}
-% TODO text: adding Dense to BM25+SPLADE is significant on both collections,
-%   even though Dense alone is the weakest paragraph model. Note RRF is not
-%   one of the submitted Test runs.
+
+Table~\ref{tab:fusion} shows that fusion helps most on paragraphs. Fusing
+BM25 with SPLADE significantly improves over both on paragraph nDCG
+(0.531, vs.\ 0.494 for SPLADE) and nDCG@5, but on papers it is no better
+than SPLADE alone. Adding the dense model gives the best results on every
+metric for both collections, with paper nDCG of 0.701 and paragraph nDCG
+of 0.550. On paragraphs, RRF of all three models is significantly better
+than BM25, SPLADE, and RRF(BM25+SPLADE) on nearly every metric, even
+though the dense model alone is the weakest paragraph model. On papers,
+its gains over SPLADE are significant for nDCG, P@10, and Recall@100, but
+not for nDCG@5 or MRR. We used the standard $k = 60$ without tuning, and
+fusion is not among our submitted Test runs.
 
 \subsection{Query Difficulty}
 \label{sec:difficulty}
@@ -462,6 +594,16 @@ give a fuller picture of how the models perform on hard queries.
 
 \subsection{Test Annotation}
 \label{sec:annotation}
+
+For each of the 250 Test queries we judged the top-ranked paragraph of our
+best Study model, fine-tuned SPLADE, using the same 0--2 scale and
+guidelines as in Part~1: \textit{relevant} (2), \textit{partially relevant}
+(1), or \textit{non-relevant} (0). Annotators saw the paragraph's original
+text, including equations, and the paper's title. For 79 queries (32\%),
+SPLADE's top paragraph was the one BM25 had ranked first in Part~1, so we
+reused its Part~1 grade; the remaining 171 were split evenly among the three
+of us (57 each), balanced by difficulty. 
+
 \begin{table}[t]
   \caption{Grades of the top-ranked paragraph for the 250 Test queries,
     by difficulty: fine-tuned SPLADE (Part~2) and BM25 (Part~1). For 79
@@ -487,9 +629,15 @@ give a fuller picture of how the models perform on hard queries.
     \bottomrule
   \end{tabular}
 \end{table}
-% TODO: process (batches split among three annotators, Part 1 judgments reused
-%   where the same pair recurred, class criteria), breakdown by difficulty,
-%   how often each model's top result was unjudged in Study.
+
+SPLADE's top paragraph is at least partially relevant for 203 queries (81\%),
+against 197 (79\%) for BM25, and fully relevant for 113 (45\%), against 104
+(42\%) (Table~\ref{tab:annotation}). The gain comes from hard queries, where
+SPLADE's top paragraph is relevant for 32 of 50 against 22 for BM25, while
+BM25 stays slightly ahead on easy queries (70 vs.\ 66 of 75), the same
+pattern as in the Study results (Section~\ref{sec:difficulty}). These counts
+are descriptive: each model has one judged paragraph per query, and the two
+sets of judgments were made in different phases of the project.
 
 \subsection{Efficiency}
 \label{sec:efficiency}
@@ -541,16 +689,35 @@ and should be read as approximate.
 
 \section{Results Analysis}
 \label{sec:analysis}
+We now examine why the models perform as they do: how SPLADE and the dense model 
+differ, what the neural models gain over BM25 and where that gain comes from, 
+example queries on which they succeed and fail, and why fine-tuning and fusion had 
+the effects they did. We close with a summary of each system's strengths and 
+weaknesses.
 
 \subsection{Comparing the Neural Models}
 \label{sec:neural-compare}
-% TODO: SPLADE > Dense everywhere (significant on paragraphs). SPLADE keeps
-%   exact term matching (weights on real vocabulary terms) plus expansion,
-%   which matters for technical names/acronyms; Dense compresses a paragraph
-%   into 384 dims, losing rare terms. MiniLM is small and general-domain.
-% TODO: why Dense beats BM25 on papers but not paragraphs: MaxP lets a paper
-%   win through any of ~66 paragraphs, so semantic near-misses still surface
-%   the right paper; for paragraphs, a near-miss is simply wrong.
+As we see in Table~\ref{tab:main}, SPLADE performed better
+than Dense retrieval on both papers and paragraphs. For paper
+retrieval, SPLADE was able to achieve an nDCG of 0.671 compared
+to 0.640 for Dense. For paragraph retrieval, SPLADE also 
+performed better, with an nDCG of 0.494 compared to 0.447. The
+differences in paragraph-level nDCG were statistically significant.
+
+One possible explanation is how the two models represent text. SPLADE
+uses vocabulary-based representations that can preserve important 
+technical terms while also expanding beyond exact word matches. Dense
+retrieval represents each paragraph using a 384-dimensional embedding, 
+which helps capture semantic similarity but may lose some specific
+technical information. 
+
+Dense retrieval also outperformed the original BM25 baseline on papers,
+but not on paragraphs. This improvement may come from the MaxP
+paper-ranking approach rather than from dense retrieval itself: as shown
+in Table~\ref{tab:maxp}, BM25 with MaxP achieved a paper-level nDCG of
+0.645 compared to 0.640 for Dense, with no statistically significant
+difference between the models. Since BM25-MaxP performed similarly to
+Dense, we cannot attribute the improvement to the Dense model alone.
 
 \subsection{Comparison with the BM25 Baseline}
 \label{sec:vs-bm25}
@@ -689,33 +856,67 @@ comparison is only indicative, but our Study scores are best read as lower bound
 
 \subsection{Why Fine-Tuning Gave Little}
 \label{sec:why-finetune}
-% TODO hypotheses:
-% - both base models are already trained on large retrieval data (MS MARCO /
-%   1B pairs); ~1,800 Train queries is a small signal on top
-% - negatives come from BM25, so the model learns to beat BM25-style
-%   distractors, not its own errors
-% - checkpoint selection on validation nDCG@10 over a small query set is noisy
-% - Train judgments are sparse: some ``negatives'' may be unjudged relevant
-%   paragraphs (why we skip BM25's top 20)
+One possible reason fine-tuning did not improve our
+results significantly is that both pretrained models had
+already learned useful representations from large training
+datasets. Our training set contained around 1,800 queries,
+which may not have been enough to make a noticeable improvement 
+over the original models. This could be an explanation of why
+we saw only small changes in retrieval performance after fine-tuning.
+
+Another possible factor is how the training data was prepared. Both
+models were trained against hard negatives selected by BM25, so they
+learned to separate relevant paragraphs from BM25-style distractors
+rather than from their own mistakes.
+
+Also, our relevance judgements were limited, meaning some paragraphs
+treated as negative examples may have actually been relevant. We attempted
+to reduce this risk during BM25 negative sampling by skipping the top 20
+results. Finally, selecting checkpoints using validation nDCG@10 from a 
+relatively small query set may have contributed to differences between
+validation performance and our final Study results.
 
 \subsection{Why Fusion Helps}
 \label{sec:why-fusion}
-% TODO: the models fail on different queries (term-matching vs semantic
-%   errors), so a document ranked well by two of them is usually right.
-%   Supporting stat: overlap of top-10 results between models, or count of
-%   queries where each model is the only one with a relevant doc in its top 5.
+Our results suggest that combining different retrieval models can improve
+performance because each model approaches retrieval differently. BM25 focuses
+on exact term matching, SPLADE combines term matching with learned expansion, 
+and Dense retrieval uses semantic similarity. Because of these differences, 
+the models may retrieve relevant documents that the others miss. 
+
+As we see in Table~\ref{tab:fusion}, combining all three models using 
+Reciprocal Rank Fusion (RRF) produced the best overall results. Paper-level
+nDCG increased from 0.671 for SPLADE alone to 0.701 for RRF, while
+paragraph-level nDCG increased from 0.494 to 0.550.
+
+Something interesting to note is that adding Dense to the BM25 and SPLADE
+combination improved paragraph-level nDCG from 0.531 to 0.550, even though Dense
+had the lowest individual paragraph-level nDCG. This suggests that Dense
+contributed useful retrieval results that complemented the other two models.
 
 \subsection{Strengths and Weaknesses}
 \label{sec:strengths}
-% TODO short summary per system:
-%   BM25: exact names/acronyms, cheap, interpretable; fails on paraphrase.
-%   SPLADE: best single model, keeps term matching + expansion; larger index,
-%     GPU encoding, still fooled by shared terms across fields.
-%   Dense: best at pure paraphrase, small index; loses rare technical terms,
-%     weakest on paragraphs.
-%   RRF: best overall; costs three retrievers per query.
+Each retrieval approach had different strengths and weaknesses. BM25 was
+useful for matching exact terms, including technical names and acronyms.
+It was also relatively simple and efficient, but struggled when queries 
+used different terminology from relevant documents. 
 
-%======================================================================
+SPLADE was our strongest individual retrieval model. By combining
+vocabulary-based matching with learned term expansion, it could retrieve
+relevant documents even when the query and document did not use exactly
+the same words. However, it still had limitations when similar terms
+appeared in unrelated scientific contexts. It also required more
+computational resources than BM25. 
+
+Dense retrieval was useful for capturing semantic similarity between queries
+and documents, but it performed worse than SPLADE overall. Its compact
+embeddings may have lost some important technical details, particularly 
+when retrieving specific paragraphs.
+
+Finally, RRF achieved the best overall performance by combining the rankings 
+from all three models. This approach also required running multiple retrieval
+systems, increasing computational cost compared to using a single model. 
+
 \section{Conclusion}
 We extended our BM25 system with learned sparse and dense retrieval over arXiv 
 paragraphs. SPLADE was the most effective single model, and both neural models 
