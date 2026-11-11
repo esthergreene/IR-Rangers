@@ -96,16 +96,71 @@ rank fusion, scientific document retrieval, passage retrieval}
 
 \subsection{Learned Sparse Retrieval}
 \label{sec:splade}
-% TODO: SPLADE \cite{formal2021splade}: MLM head -> log-saturated ReLU,
-%   max-pooled weights over the vocabulary; query and document are sparse
-%   vectors, scored by dot product. Start from naver/splade-cocondenser-selfdistil
-%   \cite{formal2022distillation}, which is also the zero-shot model.
-% TODO fine-tuning: SparseMultipleNegativesRankingLoss (in-batch + hard negative)
-%   + FLOPS regularization \cite{paria2020minimizing}; batch 32, lr 1e-5,
-%   up to 3 epochs, eval every 50 steps, early stopping (patience 3) on
-%   validation nDCG@10. Confirm run2's actual values.
-% TODO index: paragraph vectors stored as a sparse matrix (.npz), searched
-%   by sparse matrix-vector product.
+\subsubsection{Architecture and Representation}
+For learned sparse retrieval we use SPLADE \cite{formal2021splade}, initialized from the
+\texttt{naver/splade-cocondenser-selfdistil} checkpoint \cite{formal2022distillation},
+which also serves as our zero-shot baseline. SPLADE maps a text (query or paragraph) to a
+sparse vector wR|V| over the BERT WordPiece vocabulary
+(|V|=30,522). For each input position t, the Masked Language Modeling (MLM) head
+produces a logit wt,j for every vocabulary term j; these are passed through a
+log-saturated ReLU and max-pooled over positions (padding masked out):
+\begin{equation}
+    w_j = \max_{t} \log \left( 1 + \text{ReLU}(w_{t,j}) \right)
+\end{equation}
+The ReLU zeroes out most terms, max-pooling keeps each term's strongest contribution
+anywhere in the text, and the logarithm damps very large weights so that no single term
+dominates a score. Because the MLM head scores the whole vocabulary, a text can receive
+weight on terms it does not contain, which lets SPLADE expand queries and documents with
+related terms while still matching exact terms. Inputs are truncated at 256 tokens.
+
+
+\subsubsection{Model Fine-Tuning}
+We fine-tune the base model on the training triples described in
+Section~\ref{sec:training-data} with \texttt{SpladeLoss}, which combines
+\texttt{SparseMultipleNegativesRankingLoss} with FLOPS regularization
+\cite{paria2020minimizing}. The ranking loss is a softmax cross-entropy in which each
+query's positive paragraph must outscore its BM25 hard negative and all other paragraphs
+in the batch. A no-duplicates batch sampler keeps a query from appearing twice in one
+batch, so its other positives are never treated as negatives. FLOPS regularization
+penalizes the sum over the vocabulary of each term's squared mean weight across the batch,
+which discourages terms that are active in many texts and so keeps posting lists short;
+we weight it 510-5 for queries and 310-5 for documents.
+
+
+Fine-tuning settings:
+\begin{itemize}
+    \item \textbf{Batch size:} 32 (mixed precision, fp16)
+    \item \textbf{Learning rate:} 110-5
+    \item \textbf{Training horizon:} up to 3 epochs
+    \item \textbf{Validation and early stopping:} validation nDCG@10 every 50 steps; training
+          stops after 3 evaluations without improvement, and the best checkpoint is kept.
+\end{itemize}
+The best checkpoint (step 300, epoch 1.86) raised validation nDCG@10 from 0.566 to 0.644.
+
+
+\subsubsection{Indexing and Retrieval}
+\paragraph{Index construction.}
+Cleaned paragraphs are encoded on the GPU in batches of 64. % TODO Courtney: confirm 64 vs 32
+Each batch's activations are copied to host memory in a single transfer and stored as a
+small CSR matrix. The batches are then stacked into one paragraph~~vocabulary
+matrix and converted to Compressed Sparse Column (CSC) format, so that each vocabulary
+term's column, holding the paragraphs that contain it and their weights, is contiguous, as
+in an inverted index. The matrix is saved as a compressed \texttt{.npz} file, together
+with the paragraph IDs in row order and the encoder settings. Retrieval loads this saved
+index; it is rebuilt only on request.
+
+
+\paragraph{Search.}
+Queries are encoded by the same pipeline into qR|V|, and a
+paragraph's score is the sparse dot product
+\begin{equation}
+    S(q, d) = \langle \mathbf{q}, \mathbf{d} \rangle = \sum_{j \in V} q_j \, d_j
+\end{equation}
+Only the columns of the query's active terms are read, which works like term-at-a-time
+scoring over an inverted index. The top k paragraphs are returned with their scores;
+paragraphs that share no active term with the query score zero and are left out.
+
+
 
 \subsection{Dense Retrieval}
 \label{sec:dense}
@@ -137,10 +192,26 @@ scoring paragraphs based on similarity.
 
 \subsection{Paper Ranking}
 \label{sec:maxp}
-% TODO: neural models index paragraphs only. Each paper is scored by its
-%   best paragraph (MaxP, \cite{dai2019deeper}) among the top 2,000 retrieved
-%   paragraphs; keep the top 100 papers. BM25 papers still use the Part 1
-%   paper index. Note why 2,000 (enough to fill 100 distinct papers).
+Our neural models index paragraphs only, so paper rankings are built from
+paragraph rankings with MaxP \cite{dai2019deeper}: each paper is scored by
+its best-scoring retrieved paragraph,
+\begin{equation}
+    \text{score}(p) = \max_{d \in p \,\cap\, R_q} s(q, d),
+\end{equation}
+where s(q,d) is the model's score for paragraph d and Rq is the set
+of paragraphs retrieved for query q. We retrieve the top 2,000 paragraphs,
+map each to its paper, and walk down the list keeping the first occurrence
+of each paper; since the list is sorted by score, a paper's first occurrence
+is its best paragraph. We stop at 100 distinct papers. Retrieval goes far
+deeper than 100 because one paper often has several paragraphs near the top
+of the ranking; at a depth of 2,000, every Study query yielded 100 distinct
+papers. Papers with no paragraph in the top 2,000 are not ranked.
+The BM25 baseline keeps its own full-paper index; in
+Section~\ref{sec:vs-bm25} we also rank papers with BM25 by MaxP to separate
+the effect of MaxP from that of neural matching.
+
+
+
 
 \subsection{Rank Fusion}
 \label{sec:rrf}
@@ -332,46 +403,52 @@ Study query set.
 
 \subsection{Test Annotation}
 \label{sec:annotation}
+
+For each of the 250 Test queries we judged the top-ranked paragraph of our
+best Study model, fine-tuned SPLADE, using the same 0--2 scale and
+guidelines as in Part~1: \textit{relevant} (2), \textit{partially relevant}
+(1), or \textit{non-relevant} (0). Annotators saw the paragraph's original
+text, including equations, and the paper's title. For 79 queries (32\%),
+SPLADE's top paragraph was the one BM25 had ranked first in Part~1, so we
+reused its Part~1 grade; the remaining 171 were split evenly among the three
+of us (57 each), balanced by difficulty. 
+
+
 \begin{table}[t]
-  \caption{Our judgments of top-ranked Test paragraphs.
-    % TODO describe exactly what was judged (which models, what depth)
-  }
+  \caption{Grades of the top-ranked paragraph for the 250 Test queries,
+    by difficulty: fine-tuned SPLADE (Part~2) and BM25 (Part~1). For 79
+    queries both models ranked the same paragraph first, and its Part~1
+    grade was reused.}
   \label{tab:annotation}
   \small
-  \begin{tabular}{lrrr}
+  \begin{tabular}{lrrrr}
     \toprule
-    Grade & Dense & SPLADE & Both \\
+    Grade & Easy & Medium & Hard & All \\
     \midrule
-    Relevant (2)           & TODO & TODO & TODO \\
-    Partially relevant (1) & TODO & TODO & TODO \\
-    Non-relevant (0)       & TODO & TODO & TODO \\
+    \multicolumn{5}{l}{\textit{SPLADE (Part 2)}} \\
+    Relevant (2)           & 47 & 54 & 12 & 113 \\
+    Partially relevant (1) & 19 & 51 & 20 &  90 \\
+    Non-relevant (0)       &  9 & 20 & 18 &  47 \\
+    Relevant or partially  & 88\% & 84\% & 64\% & 81\% \\
+    \midrule
+    \multicolumn{5}{l}{\textit{BM25 (Part 1)}} \\
+    Relevant (2)           & 49 & 48 &  7 & 104 \\
+    Partially relevant (1) & 21 & 57 & 15 &  93 \\
+    Non-relevant (0)       &  5 & 20 & 28 &  53 \\
+    Relevant or partially  & 93\% & 84\% & 44\% & 79\% \\
     \bottomrule
   \end{tabular}
 \end{table}
-% TODO: process (batches split among three annotators, Part 1 judgments reused
-%   where the same pair recurred, class criteria), breakdown by difficulty,
-%   how often each model's top result was unjudged in Study.
 
-\subsection{Efficiency}
-\label{sec:efficiency}
-\begin{table}[t]
-  \caption{Index size, indexing time and per-query latency.
-    % TODO hardware: ant server CPU/GPU
-  }
-  \label{tab:efficiency}
-  \small
-  \begin{tabular}{lrrr}
-    \toprule
-    Model & Index size & Indexing & Query (ms) \\
-    \midrule
-    BM25 (paragraphs) & TODO & TODO & TODO \\
-    SPLADE            & TODO & TODO & TODO \\
-    Dense             & TODO & TODO & TODO \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-% TODO: also training time per model; note neural paper retrieval costs a
-%   2,000-paragraph search + MaxP.
+
+SPLADE's top paragraph is at least partially relevant for 203 queries (81\%),
+against 197 (79\%) for BM25, and fully relevant for 113 (45\%), against 104
+(42\%) (Table~\ref{tab:annotation}). The gain comes from hard queries, where
+SPLADE's top paragraph is relevant for 32 of 50 against 22 for BM25, while
+BM25 stays slightly ahead on easy queries (70 vs.\ 66 of 75), the same
+pattern as in the Study results (Section~\ref{sec:difficulty}). These counts
+are descriptive: each model has one judged paragraph per query, and the two
+sets of judgments were made in different phases of the project.
 
 %======================================================================
 \section{Results Analysis}
