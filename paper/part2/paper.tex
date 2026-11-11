@@ -132,7 +132,11 @@ list~\cite{bird2009nltk}, extended with terms common in scientific writing such 
 stemmer~\cite{porter2001snowball}. Cleaning reduces the paragraph collection from 
 168.0 to 114.9 million tokens (31.6\%) and leaves 8,389 paragraphs, almost all 
 standalone formulas, empty. These are excluded, leaving 2,267,185 indexed paragraphs. 
-Both encoders trucate their input at 256 WordPiece tokens.
+
+For the neural models, we remove inline mathematics, \LaTeX{} commands, URLs, and
+citation markers in the same way, but keep case, stopwords, and word forms, since
+each encoder applies its own WordPiece tokenizer; queries are cleaned identically.
+This leaves 2,275,547 paragraphs. Both encoders truncate their input at 256 WordPiece tokens.
 
 \subsection{BM25 Baseline}
 \label{sec:bm25}
@@ -423,7 +427,9 @@ Figure~\ref{fig:training} shows the training curves. For SPLADE,
 validation loss fell sharply in the first third of an epoch and reached
 its minimum at step 300 (epoch 1.86), where validation nDCG@10 also
 peaked at 0.644, up from 0.566 for the zero-shot model; early stopping
-ended training at about epoch 2.8.
+ended training at about epoch 2.8. Fine-tuning also made SPLADE less sparse: 
+the average number of active terms rose from 103 to 203 per query and from 
+184 to 363 per paragraph.
 
 \subsection{Effectiveness}
 \label{sec:effectiveness}
@@ -582,14 +588,14 @@ with fusion that we see a significant difference in nDCG (0.276 RRF vs.\ 0.187 B
 
 On paragraphs, BM25 remains the best single model on easy queries (0.676), 
 significantly ahead of the dense model (0.559) and numerically ahead of SPLADE 
-(0.627). Easy queries tend to reuse the wording of their source apragraph, which 
+(0.627). Easy queries tend to reuse the wording of their source paragraph, which 
 exact term matching rewards. SPLADE leads on medium queries (0.475 vs.\ 0.425 for 
 BM25, not significant), and fusion is significantly better than every single model 
 (0.547). On hard paragraph queries, all models score close to zero: 0.003 for BM25 
-and about 0.04 for the neural models. Both neural models are significantly better 
-than BM25 on nDCG, but none reliably places a judged relevant paragraph in its 
-top five. Incomplete judgments may contribute to this: in Part~1, BM25's top-ranked 
-paragraph was unjudged for every hard Study query. Our Test annotations (Section~\ref{sec:annotation}) 
+and about 0.04 for the neural models. The dense model is significantly better than BM25, 
+but no model reliably places a judged relevant paragraph in its top five. Incomplete 
+judgments may contribute to this: in Part~1, BM25's top-ranked paragraph was unjudged 
+for every hard Study query. Our Test annotations (Section~\ref{sec:annotation}) 
 give a fuller picture of how the models perform on hard queries.
 
 \subsection{Test Annotation}
@@ -668,7 +674,7 @@ in 62\,ms, against 230\,ms for the dense model and 491\,ms for SPLADE. Neural
 paper retrieval costs about as much as paragraph retrieval, since it is a 
 2,000-paragraph search followed by MaxP (Section~\ref{sec:maxp}). For the dense 
 model the two latencies are identical, because exact search compares the query 
-with all 2.28 million paragraph vectors whatever the depth; this brute-foce CPU 
+with all 2.28 million paragraph vectors whatever the depth; this brute-force CPU 
 search, not query encoding, accounts for most of its latency, and an approximate 
 or GPU index would reduce it. SPLADE is the slowest model even though it searches 
 only the columns of its query terms: fine-tuned queries activate about 200 terms, 
